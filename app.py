@@ -8,6 +8,7 @@ from bson import ObjectId
 from dotenv import load_dotenv
 import datetime
 import re
+from urllib.parse import quote_plus
 
 # Load environment variables
 load_dotenv()
@@ -20,6 +21,22 @@ try:
     MONGODB_URI = os.getenv('MONGODB_URI')
     if not MONGODB_URI:
         raise ValueError("No MONGODB_URI in environment variables")
+    
+    # Parse and reconstruct the URI with escaped username and password
+    if '@' in MONGODB_URI:
+        prefix = MONGODB_URI.split('://', 1)[0]
+        rest = MONGODB_URI.split('://', 1)[1]
+        credentials = rest.split('@')[0]
+        host = rest.split('@')[1]
+        username = credentials.split(':')[0]
+        password = credentials.split(':')[1].split('@')[0]
+        
+        # Escape username and password
+        escaped_username = quote_plus(username)
+        escaped_password = quote_plus(password)
+        
+        # Reconstruct the URI
+        MONGODB_URI = f"{prefix}://{escaped_username}:{escaped_password}@{host}"
     
     client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
     # Ping the server to check connection

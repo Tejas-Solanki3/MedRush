@@ -139,199 +139,118 @@
         </div>
     </div>
 
-    <!-- Main Content -->
-    <div class="container mt-5">
-        <!-- Premium Services Section -->
-        <div class="container mt-5">
-            <div class="premium-section-header">
-                <h2>Premium Healthcare Solutions</h2>
-                <p>Experience top-tier medical services with our premium features designed for your peace of mind</p>
+    <!-- Features Section -->
+    <section class="features-section py-5">
+        <div class="container">
+            <div class="section-header text-center mb-5">
+                <h2 class="display-4 fw-bold">Our Services</h2>
+                <p class="lead text-muted">Comprehensive healthcare solutions at your fingertips</p>
             </div>
-
-            <div class="row">
-                <div class="col-lg-6 mb-4">
-                    <div class="premium-card">
-                        <div class="service-icon">
-                            <i class="fas fa-hospital-user"></i>
-                        </div>
-                        <h3>Smart Appointment System</h3>
-                        <p>Skip the waiting room with our intelligent appointment scheduling</p>
-                        <ul class="feature-list">
-                            <li>Real-time queue management</li>
-                            <li>Virtual waiting room</li>
-                            <li>Priority scheduling</li>
-                            <li>Instant doctor availability</li>
-                        </ul>
-                        <button class="btn btn-primary" onclick="location.href='/appointments'">
-                            Schedule Now
-                        </button>
-                    </div>
-                </div>
-
-                <div class="col-lg-6 mb-4">
-                    <div class="premium-card">
-                        <div class="service-icon emergency-icon">
-                            <i class="fas fa-ambulance"></i>
-                        </div>
-                        <h3>Dark Ambulance</h3>
-                        <p>Emergency medical transport in under 10 minutes</p>
-                        <ul class="feature-list">
-                            <li>Real-time GPS tracking</li>
-                            <li>Advanced life support equipment</li>
-                            <li>Trained emergency responders</li>
-                            <li>Direct hospital coordination</li>
-                        </ul>
-                        <button class="btn emergency-btn" onclick="location.href='/emergency'">
-                            Emergency Call
-                        </button>
-                    </div>
-                </div>
-
-                <div class="col-lg-6 mb-4">
-                    <div class="premium-card">
-                        <div class="service-icon">
-                            <i class="fas fa-bed"></i>
-                        </div>
-                        <h3>Smart Bed Reservation</h3>
-                        <p>Secure hospital beds instantly across our network</p>
-                        <ul class="feature-list">
-                            <li>Live bed availability</li>
-                            <li>Priority admission process</li>
-                            <li>Paperless registration</li>
-                            <li>Multi-hospital network</li>
-                        </ul>
-                        <button class="btn btn-primary" onclick="location.href='/beds'">
-                            Find Available Beds
-                        </button>
-                    </div>
-                </div>
-
-                <div class="col-lg-6 mb-4">
-                    <div class="premium-card">
-                        <div class="service-icon">
-                            <i class="fas fa-first-aid"></i>
-                        </div>
-                        <h3>Emergency First Aid</h3>
-                        <p>Interactive guidance for immediate medical assistance</p>
-                        <ul class="feature-list">
-                            <li>Step-by-step instructions</li>
-                            <li>Video demonstrations</li>
-                            <li>Voice-guided assistance</li>
-                            <li>Emergency protocols</li>
-                        </ul>
-                        <button class="btn btn-primary" onclick="location.href='/firstaid'">
-                            Access Guide
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Minor Services Section -->
-        <div class="container mt-5">
-            <div class="row mb-4">
-                <div class="col-12 text-center">
-                    <h2 class="display-5">Our Services</h2>
-                    <p class="lead">Comprehensive healthcare solutions at your fingertips</p>
-                </div>
-            </div>
-
-            <!-- Minor Services -->
-            <h3 class="text-secondary mb-4"><i class="fas fa-plus-circle"></i> Additional Services</h3>
-            <div class="row">
-                <div class="col-md-3 mb-4">
-                    <div class="card service-card minor-card">
-                        <div class="card-body">
-                            <i class="fas fa-shield-alt"></i>
-                            <h4>Insurance Support</h4>
-                            <p>Insurance verification and claims assistance</p>
-                            <button class="btn btn-outline-primary btn-sm mt-2">Learn More</button>
+            <div class="row g-4">
+                <!-- Smart Healthcare Management -->
+                <div class="col-md-4">
+                    <div class="feature-card h-100">
+                        <div class="card-body text-center">
+                            <div class="icon-circle mb-4">
+                                <i class="fas fa-calendar-check"></i>
+                            </div>
+                            <h3>Smart Healthcare Management</h3>
+                            <p class="text-muted">Book appointments and reserve hospital beds seamlessly through our integrated system.</p>
+                            <ul class="feature-list">
+                                <li><i class="fas fa-check-circle"></i> Online doctor appointments</li>
+                                <li><i class="fas fa-check-circle"></i> Hospital bed availability</li>
+                                <li><i class="fas fa-check-circle"></i> Real-time updates</li>
+                                <li><i class="fas fa-check-circle"></i> Instant confirmations</li>
+                            </ul>
+                            {% if current_user.is_authenticated %}
+                            <a href="/book-appointment" class="btn btn-primary mt-3 rounded-pill">Book Now</a>
+                            {% else %}
+                            <a href="/login" class="btn btn-primary mt-3 rounded-pill">Login to Book</a>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
 
-                <div class="col-md-3 mb-4">
-                    <div class="card service-card minor-card">
-                        <div class="card-body">
-                            <i class="fas fa-stethoscope"></i>
-                            <h4>Doctor Connect</h4>
-                            <p>Direct consultation and prescription verification</p>
-                            <button class="btn btn-outline-primary btn-sm mt-2">Connect Now</button>
+                <!-- Dark Ambulance -->
+                <div class="col-md-4">
+                    <div class="feature-card h-100 emergency-card">
+                        <div class="card-body text-center">
+                            <div class="icon-circle emergency-icon mb-4">
+                                <i class="fas fa-ambulance"></i>
+                            </div>
+                            <h3>Dark Ambulance</h3>
+                            <p class="text-muted">Emergency medical transport in under 10 minutes, available 24/7.</p>
+                            <ul class="feature-list">
+                                <li><i class="fas fa-check-circle"></i> Real-time GPS tracking</li>
+                                <li><i class="fas fa-check-circle"></i> Advanced life support</li>
+                                <li><i class="fas fa-check-circle"></i> Trained responders</li>
+                                <li><i class="fas fa-check-circle"></i> Hospital coordination</li>
+                            </ul>
+                            <button class="btn btn-danger mt-3 rounded-pill emergency-btn" onclick="location.href='/emergency'">
+                                <i class="fas fa-phone-alt me-2"></i>Emergency Call
+                            </button>
                         </div>
                     </div>
                 </div>
 
-                <div class="col-md-3 mb-4">
-                    <div class="card service-card minor-card">
-                        <div class="card-body">
-                            <i class="fas fa-brain"></i>
-                            <h4>AI Symptom Check</h4>
-                            <p>Smart symptom analysis and recommendations</p>
-                            <button class="btn btn-outline-primary btn-sm mt-2">Check Symptoms</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-md-3 mb-4">
-                    <div class="card service-card minor-card">
-                        <div class="card-body">
-                            <i class="fas fa-graduation-cap"></i>
-                            <h4>Emergency Courses</h4>
-                            <p>Learn essential emergency care skills</p>
-                            <button class="btn btn-outline-primary btn-sm mt-2">Start Learning</button>
+                <!-- Insurance Support -->
+                <div class="col-md-4">
+                    <div class="feature-card h-100">
+                        <div class="card-body text-center">
+                            <div class="icon-circle mb-4">
+                                <i class="fas fa-shield-alt"></i>
+                            </div>
+                            <h3>Insurance Support</h3>
+                            <p class="text-muted">Comprehensive insurance coverage and claims assistance for hassle-free healthcare.</p>
+                            <ul class="feature-list">
+                                <li><i class="fas fa-check-circle"></i> Insurance verification</li>
+                                <li><i class="fas fa-check-circle"></i> Claims processing</li>
+                                <li><i class="fas fa-check-circle"></i> Coverage analysis</li>
+                                <li><i class="fas fa-check-circle"></i> 24/7 support</li>
+                            </ul>
+                            {% if current_user.is_authenticated %}
+                            <a href="/insurance" class="btn btn-primary mt-3 rounded-pill">Check Coverage</a>
+                            {% else %}
+                            <a href="/login" class="btn btn-primary mt-3 rounded-pill">Login to Check</a>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+    </section>
 
-        <!-- AI Chat Section -->
-        <div id="chat-section" class="chat-section">
-            <div class="container">
-                <div class="row justify-content-center">
-                    <div class="col-md-8">
-                        <div class="chat-card">
-                            <div class="chat-header">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <h5 class="mb-0">AI Health Assistant</h5>
-                                    <button id="langToggle" class="btn btn-outline-primary btn-sm">
-                                        <span id="langText">Switch to Hinglish</span>
+    <!-- AI Chat Section -->
+    <div id="chat-section" class="chat-section">
+        <div class="container">
+            <div class="row justify-content-center">
+                <div class="col-md-8">
+                    <div class="chat-card">
+                        <div class="chat-header">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">AI Health Assistant</h5>
+                                <button id="langToggle" class="btn btn-outline-primary btn-sm">
+                                    <span id="langText">Switch to Hinglish</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="chat-body" id="chat-messages">
+                            <!-- Messages will be added here -->
+                        </div>
+                        <div class="chat-footer">
+                            <form id="chat-form" onsubmit="chatAssistant.sendMessage(event)">
+                                <div class="input-group">
+                                    <input type="text" 
+                                           id="user-input" 
+                                           class="form-control chat-input" 
+                                           placeholder="Ask me about your health concerns..."
+                                           autocomplete="off">
+                                    <button type="submit" class="btn btn-primary chat-send-btn">
+                                        <i class="fas fa-paper-plane"></i>
                                     </button>
                                 </div>
-                            </div>
-                            <div class="chat-body" id="chat-messages">
-                                <!-- Messages will be added here -->
-                            </div>
-                            <div class="chat-footer">
-                                <form id="chat-form" onsubmit="chatAssistant.sendMessage(event)">
-                                    <div class="input-group">
-                                        <input type="text" 
-                                               id="user-input" 
-                                               class="form-control chat-input" 
-                                               placeholder="Ask me about your health concerns..."
-                                               autocomplete="off">
-                                        <button type="submit" class="btn btn-primary chat-send-btn">
-                                            <i class="fas fa-paper-plane"></i>
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
+                            </form>
                         </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Emergency Services -->
-        <div class="row mb-5">
-            <div class="col-12">
-                <div class="card bg-danger text-white">
-                    <div class="card-body text-center">
-                        <h3><i class="fas fa-ambulance"></i> Emergency Services</h3>
-                        <p class="mb-3">Need immediate medical attention? Our emergency services are available 24/7.</p>
-                        <button class="btn btn-light btn-lg">
-                            <i class="fas fa-phone"></i> Call Emergency
-                        </button>
                     </div>
                 </div>
             </div>

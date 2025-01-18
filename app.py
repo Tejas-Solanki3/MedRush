@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory, render_template
+from flask import Flask, request, jsonify, send_from_directory, render_template, flash, redirect, url_for
 import google.generativeai as genai
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -15,6 +15,7 @@ load_dotenv()
 
 app = Flask(__name__, static_folder='static')
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
+app.config['TEMPLATES_AUTO_RELOAD'] = True
 
 # MongoDB setup
 try:
@@ -46,6 +47,7 @@ try:
     db = client['medrush_db']
     users_collection = db['users']
     appointments_collection = db['appointments']
+    insurance_collection = db['insurance']  # Create insurance collection
     
 except Exception as e:
     print(f"Error connecting to MongoDB: {str(e)}")
@@ -55,6 +57,7 @@ except Exception as e:
 users_collection.create_index('username', unique=True)
 users_collection.create_index('email', unique=True)
 appointments_collection.create_index([('user_id', 1), ('date', 1)])
+insurance_collection.create_index([('user_id', 1), ('created_at', 1)])  # Create index for insurance collection
 
 # Login manager setup
 login_manager = LoginManager(app)
@@ -223,9 +226,68 @@ def signup():
             'message': f'An error occurred during signup: {str(e)}'
         }), 500
 
-@app.route('/book-appointment', methods=['POST'])
+@app.route('/book-appointment')
 @login_required
 def book_appointment():
+    return render_template('book_appointment.html')
+
+@app.route('/submit-appointment', methods=['POST'])
+@login_required
+def submit_appointment():
+    try:
+        # Print form data for debugging
+        print("Form data received:", request.form)
+        
+        # Get form data
+        appointment_data = {
+            'user_id': str(current_user.get_id()),
+            'patient_name': request.form.get('patient_name'),
+            'service_type': request.form.get('service_type'),
+            'appointment_date': request.form.get('appointment_date'),
+            'appointment_time': request.form.get('appointment_time'),
+            'symptoms': request.form.get('symptoms', ''),
+            'status': 'pending',
+            'created_at': datetime.datetime.utcnow()
+        }
+        
+        print("Appointment data:", appointment_data)  # Debug print
+        
+        # Validate required fields
+        required_fields = ['patient_name', 'service_type', 'appointment_date', 'appointment_time']
+        missing_fields = []
+        for field in required_fields:
+            if not appointment_data.get(field):
+                missing_fields.append(field.replace('_', ' ').title())
+        
+        if missing_fields:
+            flash(f'Please fill in the following required fields: {", ".join(missing_fields)}', 'danger')
+            return redirect(url_for('book_appointment'))
+        
+        # Insert into database
+        try:
+            # Verify MongoDB connection
+            client.admin.command('ping')
+            print("MongoDB connection verified")  # Debug print
+            
+            result = appointments_collection.insert_one(appointment_data)
+            print("Insert result:", result.inserted_id)  # Debug print
+            
+            if result.inserted_id:
+                flash('Appointment booked successfully!', 'success')
+                return redirect(url_for('profile'))
+        except Exception as db_error:
+            print(f"Database error: {str(db_error)}")
+            flash('Error saving appointment. Please try again.', 'danger')
+            return redirect(url_for('book_appointment'))
+            
+    except Exception as e:
+        print(f"Booking error: {str(e)}")
+        flash('An error occurred while booking. Please try again.', 'danger')
+        return redirect(url_for('book_appointment'))
+
+@app.route('/book-appointment', methods=['POST'])
+@login_required
+def book_appointment_post():
     data = request.json
     try:
         appointment = {
@@ -516,7 +578,12 @@ def chat():
 @login_required
 def profile():
     user_data = users_collection.find_one({'_id': ObjectId(current_user.get_id())})
-    return render_template('profile.html', user=user_data)
+    # Get user's appointments
+    appointments = list(appointments_collection.find(
+        {'user_id': str(current_user.get_id())},
+        {'_id': 1, 'patient_name': 1, 'service_type': 1, 'appointment_date': 1, 'appointment_time': 1, 'status': 1}
+    ).sort('appointment_date', -1))
+    return render_template('profile.html', user=user_data, appointments=appointments)
 
 @app.route('/update_profile', methods=['POST'])
 @login_required
@@ -554,6 +621,65 @@ def update_profile():
             'success': False,
             'message': 'Failed to update profile'
         }), 500
+
+@app.route('/insurance')
+@login_required
+def insurance():
+    return render_template('insurance.html')
+
+@app.route('/submit-insurance', methods=['POST'])
+@login_required
+def submit_insurance():
+    try:
+        # Print form data for debugging
+        print("Insurance form data received:", request.form)
+        
+        insurance_data = {
+            'user_id': str(current_user.get_id()),
+            'full_name': request.form.get('full_name'),
+            'insurance_type': request.form.get('insurance_type'),
+            'policy_number': request.form.get('policy_number'),
+            'claim_type': request.form.get('claim_type'),
+            'claim_amount': request.form.get('claim_amount'),
+            'description': request.form.get('description'),
+            'status': 'pending',
+            'created_at': datetime.datetime.utcnow()
+        }
+        
+        print("Insurance data:", insurance_data)  # Debug print
+        
+        # Validate required fields
+        required_fields = ['full_name', 'insurance_type', 'policy_number', 'claim_type']
+        missing_fields = []
+        for field in required_fields:
+            if not insurance_data.get(field):
+                missing_fields.append(field.replace('_', ' ').title())
+        
+        if missing_fields:
+            flash(f'Please fill in the following required fields: {", ".join(missing_fields)}', 'danger')
+            return redirect(url_for('insurance'))
+        
+        # Insert into database
+        try:
+            # Verify MongoDB connection
+            client.admin.command('ping')
+            print("MongoDB connection verified")  # Debug print
+            
+            result = insurance_collection.insert_one(insurance_data)
+            print("Insert result:", result.inserted_id)  # Debug print
+            
+            if result.inserted_id:
+                flash('Insurance claim submitted successfully!', 'success')
+                return redirect(url_for('profile'))
+        except Exception as db_error:
+            print(f"Database error: {str(db_error)}")
+            flash('Error saving claim. Please try again.', 'danger')
+            return redirect(url_for('insurance'))
+            
+    except Exception as e:
+        print(f"Insurance claim error: {str(e)}")
+        flash('An error occurred while submitting claim. Please try again.', 'danger')
+        return redirect(url_for('insurance'))
 
 @app.context_processor
 def utility_processor():

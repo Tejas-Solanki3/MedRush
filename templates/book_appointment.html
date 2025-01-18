@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="col-md-8 mb-4">
+                        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="col-md-8">
+            <div class="card shadow-lg">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="mb-0">Book an Appointment</h3>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('submit_appointment') }}" id="bookingForm">
+                        <!-- Patient Information -->
+                        <div class="mb-4">
+                            <h5 class="text-primary">Patient Information</h5>
+                            <div class="mb-3">
+                                <label for="patient_name" class="form-label">Patient Name</label>
+                                <input type="text" class="form-control" id="patient_name" name="patient_name" required>
+                            </div>
+                        </div>
+
+                        <!-- Service Selection -->
+                        <div class="mb-4">
+                            <h5 class="text-primary">Service Type</h5>
+                            <div class="mb-3">
+                                <select class="form-select" name="service_type" required>
+                                    <option value="">Select Service</option>
+                                    <option value="consultation">Doctor Consultation</option>
+                                    <option value="bed_booking">Hospital Bed Booking</option>
+                                    <option value="emergency">Emergency Service</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Appointment Details -->
+                        <div class="mb-4">
+                            <h5 class="text-primary">Appointment Details</h5>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="appointment_date" class="form-label">Preferred Date</label>
+                                    <input type="date" class="form-control" id="appointment_date" name="appointment_date" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="appointment_time" class="form-label">Preferred Time</label>
+                                    <input type="time" class="form-control" id="appointment_time" name="appointment_time" required>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Symptoms/Notes -->
+                        <div class="mb-4">
+                            <h5 class="text-primary">Symptoms & Notes</h5>
+                            <div class="mb-3">
+                                <textarea class="form-control" name="symptoms" rows="3" placeholder="Describe your symptoms or any special requirements"></textarea>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-primary btn-lg rounded-pill">
+                                <i class="fas fa-calendar-check me-2"></i>Confirm Booking
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .card {
+        border-radius: 15px;
+        border: none;
+    }
+    
+    .card-header {
+        border-radius: 15px 15px 0 0 !important;
+        background: linear-gradient(45deg, #007bff, #00d2ff);
+    }
+    
+    .form-control, .form-select {
+        border-radius: 10px;
+        padding: 10px 15px;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(45deg, #007bff, #00d2ff);
+        border: none;
+        padding: 12px 30px;
+    }
+    
+    .text-primary {
+        color: #007bff !important;
+    }
+
+    .alert {
+        border-radius: 10px;
+        border: none;
+    }
+
+    .alert-success {
+        background-color: #d4edda;
+        color: #155724;
+    }
+</style>
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Set minimum date to today
+    const dateInput = document.getElementById('appointment_date');
+    const today = new Date().toISOString().split('T')[0];
+    dateInput.min = today;
+
+    // Add form submission handling
+    const form = document.getElementById('bookingForm');
+    form.addEventListener('submit', function(e) {
+        const formData = new FormData(form);
+        console.log('Form data:', Object.fromEntries(formData));  // Debug log
+    });
+});
+</script>
+{% endblock %}
+{% endblock %}

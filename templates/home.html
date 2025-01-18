@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero-section text-center py-5">
+    <h1>Welcome to MediConsult</h1>
+    <p class="lead">Your Health, Our Priority</p>
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Virtual Consultation</h5>
+                <p class="card-text">Connect with doctors instantly through video calls</p>
+                <a href="/virtual-consultation" class="btn btn-primary">Start Consultation</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Book Ambulance</h5>
+                <p class="card-text">Emergency services at your doorstep</p>
+                <a href="/book-ambulance" class="btn btn-primary">Book Now</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">AI Assistant</h5>
+                <p class="card-text">Get instant medical guidance in English/Hinglish</p>
+                <a href="/ai-assistant" class="btn btn-primary">Chat Now</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

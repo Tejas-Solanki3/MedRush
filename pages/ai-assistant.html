@@ -1,0 +1,131 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Assistant - MediConsult</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="../static/css/style.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="index.html">MediConsult</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="virtual-consultation.html">Virtual Consultation</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="book-ambulance.html">Book Ambulance</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="ai-assistant.html">AI Assistant</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container py-5">
+        <div class="row">
+            <div class="col-md-8 mx-auto text-center mb-5">
+                <h1 class="display-4 fade-in">AI Health Assistant</h1>
+                <p class="lead fade-in">Get instant medical guidance in English/Hinglish</p>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Chat Interface -->
+            <div class="col-md-8 mx-auto">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="chat-container">
+                            <div id="chat-messages" class="messages-container"></div>
+                            <div class="input-container">
+                                <input type="text" id="user-input" placeholder="Type your message...">
+                                <button onclick="sendMessage()">Send</button>
+                                <select id="language-select">
+                                    <option value="english">English</option>
+                                    <option value="hinglish">Hinglish</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="quick-actions mt-4">
+                    <h5>Quick Actions</h5>
+                    <div class="row">
+                        <div class="col-6 col-md-3 mb-3">
+                            <button class="btn btn-outline-primary w-100" onclick="quickAction('symptoms')">
+                                <i class="fas fa-thermometer"></i>
+                                Check Symptoms
+                            </button>
+                        </div>
+                        <div class="col-6 col-md-3 mb-3">
+                            <button class="btn btn-outline-primary w-100" onclick="quickAction('appointment')">
+                                <i class="fas fa-calendar-alt"></i>
+                                Book Appointment
+                            </button>
+                        </div>
+                        <div class="col-6 col-md-3 mb-3">
+                            <button class="btn btn-outline-primary w-100" onclick="quickAction('medicine')">
+                                <i class="fas fa-pills"></i>
+                                Medicine Reminder
+                            </button>
+                        </div>
+                        <div class="col-6 col-md-3 mb-3">
+                            <button class="btn btn-outline-primary w-100" onclick="quickAction('emergency')">
+                                <i class="fas fa-ambulance"></i>
+                                Emergency Help
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Health Tips -->
+                <div class="health-tips mt-4 fade-in">
+                    <h5>Health Tips</h5>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h6><i class="fas fa-heart text-danger"></i> Stay Active</h6>
+                                    <p class="small">30 minutes of daily exercise can improve your health significantly.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h6><i class="fas fa-apple-alt text-success"></i> Healthy Diet</h6>
+                                    <p class="small">Include fruits and vegetables in your daily meals.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h6><i class="fas fa-bed text-primary"></i> Good Sleep</h6>
+                                    <p class="small">Aim for 7-8 hours of quality sleep every night.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../static/js/main.js"></script>
+</body>
+</html>

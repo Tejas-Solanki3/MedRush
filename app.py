@@ -16,7 +16,8 @@ app = Flask(__name__, static_folder='static')
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
 
 # MongoDB setup
-client = MongoClient('mongodb://localhost:27017/')
+MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
+client = MongoClient(MONGODB_URI)
 db = client['medrush_db']
 users_collection = db['users']
 appointments_collection = db['appointments']

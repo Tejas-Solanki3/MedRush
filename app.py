@@ -16,11 +16,23 @@ app = Flask(__name__, static_folder='static')
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
 
 # MongoDB setup
-MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
-client = MongoClient(MONGODB_URI)
-db = client['medrush_db']
-users_collection = db['users']
-appointments_collection = db['appointments']
+try:
+    MONGODB_URI = os.getenv('MONGODB_URI')
+    if not MONGODB_URI:
+        raise ValueError("No MONGODB_URI in environment variables")
+    
+    client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+    # Ping the server to check connection
+    client.admin.command('ping')
+    print("Successfully connected to MongoDB!")
+    
+    db = client['medrush_db']
+    users_collection = db['users']
+    appointments_collection = db['appointments']
+    
+except Exception as e:
+    print(f"Error connecting to MongoDB: {str(e)}")
+    raise e
 
 # Create indexes for faster queries
 users_collection.create_index('username', unique=True)

@@ -18,42 +18,52 @@ function openSignupModal() {
 }
 
 async function login(event) {
-    if (event) event.preventDefault();
+    event.preventDefault();
     
-    const username = document.getElementById('login-username')?.value;
-    const password = document.getElementById('login-password')?.value;
-
+    // Get the form data
+    const username = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value.trim();
+    
+    // Clear any existing alerts
+    const existingAlerts = document.querySelectorAll('.alert');
+    existingAlerts.forEach(alert => alert.remove());
+    
+    // Validate inputs
     if (!username || !password) {
         showAlert('Please fill in all fields', 'warning');
         return;
     }
-
+    
     try {
         const response = await fetch('/login', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify({ username, password })
         });
         
         const data = await response.json();
         
         if (data.success) {
-            showAlert('Login successful! Welcome back, ' + data.username, 'success');
+            showAlert('Login successful! Redirecting...', 'success');
+            
             // Close the modal
             const loginModal = bootstrap.Modal.getInstance(document.getElementById('loginModal'));
             if (loginModal) {
                 loginModal.hide();
             }
-            // Reload page to update navigation
+            
+            // Redirect after a short delay
             setTimeout(() => {
-                window.location.reload();
-            }, 1000);
+                window.location.href = data.redirect || '/';
+            }, 1500);
         } else {
-            showAlert(data.message || 'Login failed', 'danger');
+            showAlert(data.message || 'Login failed. Please try again.', 'danger');
         }
     } catch (error) {
         console.error('Login error:', error);
-        showAlert('An error occurred during login. Please try again.', 'danger');
+        showAlert('An error occurred. Please try again later.', 'danger');
     }
 }
 
@@ -147,18 +157,31 @@ async function updateProfile(event) {
     }
 }
 
-async function logout() {
-    fetch('/logout', { method: 'POST' })
-        .then(() => {
-            showAlert('Logged out successfully!', 'success');
+async function logout(event) {
+    event.preventDefault();
+    
+    try {
+        const response = await fetch('/logout', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showAlert('Logout successful! Redirecting...', 'success');
             setTimeout(() => {
                 window.location.href = '/';
-            }, 1000);
-        })
-        .catch(error => {
-            console.error('Logout error:', error);
-            showAlert('Failed to logout. Please try again.', 'danger');
-        });
+            }, 1500);
+        } else {
+            showAlert(data.message || 'Logout failed. Please try again.', 'danger');
+        }
+    } catch (error) {
+        console.error('Logout error:', error);
+        showAlert('An error occurred during logout. Please try again.', 'danger');
+    }
 }
 
 // Appointment Booking
@@ -289,27 +312,29 @@ if (statsSection) {
 
 // Helper Functions
 function showAlert(message, type = 'info') {
-    // Remove any existing alerts
-    const existingAlerts = document.querySelectorAll('.alert');
-    existingAlerts.forEach(alert => alert.remove());
-
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3`;
-    alertDiv.style.zIndex = '1050';
-    alertDiv.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    const alertPlaceholder = document.querySelector('.modal-body');
+    if (!alertPlaceholder) return;
+    
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = `
+        <div class="alert alert-${type} alert-dismissible fade show mb-3" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
     `;
-    document.body.appendChild(alertDiv);
-
-    // Add animation classes
-    setTimeout(() => alertDiv.classList.add('show'), 100);
-
-    // Auto-dismiss after 5 seconds
-    setTimeout(() => {
-        alertDiv.classList.remove('show');
-        setTimeout(() => alertDiv.remove(), 150);
-    }, 5000);
+    
+    // Insert alert at the top of the modal body
+    alertPlaceholder.insertBefore(wrapper.firstChild, alertPlaceholder.firstChild);
+    
+    // Auto-dismiss after 5 seconds for success messages
+    if (type === 'success') {
+        setTimeout(() => {
+            const alert = wrapper.querySelector('.alert');
+            if (alert) {
+                alert.remove();
+            }
+        }, 5000);
+    }
 }
 
 function displayDoctors(doctors) {
@@ -380,7 +405,55 @@ document.addEventListener('DOMContentLoaded', () => {
     const logoutBtn = document.getElementById('logout-btn');
     const updateProfileForm = document.getElementById('update-profile-form');
 
-    if (loginForm) loginForm.addEventListener('submit', login);
+    if (loginForm) loginForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        
+        // Get the form data
+        const username = document.getElementById('login-username').value.trim();
+        const password = document.getElementById('login-password').value.trim();
+        
+        // Clear any existing alerts
+        const existingAlerts = document.querySelectorAll('.alert');
+        existingAlerts.forEach(alert => alert.remove());
+        
+        // Validate inputs
+        if (!username || !password) {
+            showAlert('Please fill in all fields', 'warning');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username, password })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showAlert('Login successful! Redirecting...', 'success');
+                
+                // Close the modal
+                const loginModal = bootstrap.Modal.getInstance(document.getElementById('loginModal'));
+                if (loginModal) {
+                    loginModal.hide();
+                }
+                
+                // Redirect after a short delay
+                setTimeout(() => {
+                    window.location.href = data.redirect || '/';
+                }, 1500);
+            } else {
+                showAlert(data.message || 'Login failed. Please try again.', 'danger');
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            showAlert('An error occurred. Please try again later.', 'danger');
+        }
+    });
     if (signupForm) signupForm.addEventListener('submit', signup);
     if (appointmentForm) appointmentForm.addEventListener('submit', bookAppointment);
     if (findDoctorForm) findDoctorForm.addEventListener('submit', findDoctor);
@@ -424,164 +497,118 @@ const chatAssistant = {
     messageContainer: null,
     userInput: null,
     chatForm: null,
-    typingIndicator: null,
-    currentLanguage: 'english', // Default language
-    langToggle: null,
-    langText: null,
 
     init() {
-        console.log('Initializing AI Assistant');
         this.messageContainer = document.getElementById('chat-messages');
         this.userInput = document.getElementById('user-input');
         this.chatForm = document.getElementById('chat-form');
-        this.langToggle = document.getElementById('langToggle');
-        this.langText = document.getElementById('langText');
-
-        if (this.messageContainer && this.userInput && this.chatForm) {
-            // Clear any existing messages
-            this.messageContainer.innerHTML = '';
-            
-            // Setup event listeners
+        
+        if (this.chatForm) {
             this.chatForm.addEventListener('submit', (e) => this.sendMessage(e));
-            if (this.langToggle) {
-                this.langToggle.addEventListener('click', () => this.toggleLanguage());
+        }
+        
+        this.addWelcomeMessage();
+    },
+
+    formatAIResponse(response) {
+        // Clean the response of unnecessary asterisks
+        response = response.replace(/\*\*/g, '');
+        
+        // Split response into sections
+        const sections = {
+            symptoms: [],
+            precautions: [],
+            preventions: [],
+            other: []
+        };
+        
+        const lines = response.split('\n');
+        let currentSection = 'other';
+        
+        lines.forEach(line => {
+            line = line.trim();
+            if (!line) return;
+            
+            // Clean any remaining asterisks from individual lines
+            line = line.replace(/\*/g, '');
+            
+            if (line.toLowerCase().includes('symptom')) {
+                currentSection = 'symptoms';
+                return;
+            } else if (line.toLowerCase().includes('precaution')) {
+                currentSection = 'precautions';
+                return;
+            } else if (line.toLowerCase().includes('prevent')) {
+                currentSection = 'preventions';
+                return;
             }
             
-            // Add welcome message
-            this.addWelcomeMessage();
-            console.log('Chat assistant initialized');
-        } else {
-            console.error('Chat container not found');
+            sections[currentSection].push(line);
+        });
+        
+        // Build formatted HTML
+        let html = '';
+        
+        if (sections.symptoms.length) {
+            html += '<h6 class="mt-2">Symptoms:</h6><ul>';
+            sections.symptoms.forEach(item => html += `<li>${item}</li>`);
+            html += '</ul>';
         }
+        
+        if (sections.precautions.length) {
+            html += '<h6 class="mt-2">Precautions:</h6><ul>';
+            sections.precautions.forEach(item => html += `<li>${item}</li>`);
+            html += '</ul>';
+        }
+        
+        if (sections.preventions.length) {
+            html += '<h6 class="mt-2">Preventions:</h6><ul>';
+            sections.preventions.forEach(item => html += `<li>${item}</li>`);
+            html += '</ul>';
+        }
+        
+        if (sections.other.length) {
+            html += '<ul>';
+            sections.other.forEach(item => html += `<li>${item}</li>`);
+            html += '</ul>';
+        }
+        
+        return html || response;
     },
 
-    toggleLanguage() {
-        this.currentLanguage = this.currentLanguage === 'english' ? 'hinglish' : 'english';
-        if (this.langText) {
-            this.langText.textContent = this.currentLanguage === 'english' 
-                ? "Switch to Hinglish" 
-                : "Switch to English";
-        }
-        if (this.langToggle) {
-            this.langToggle.classList.toggle('active');
-        }
-    },
-
-    addWelcomeMessage() {
-        const welcomeMessage = this.currentLanguage === 'english' 
-            ? "Hello! I'm your AI Health Assistant. How can I help you today?"
-            : "Hi! Main aapka AI Health Assistant hoon. Aaj main aapki kya help kar sakta hoon?";
-        this.addMessage(welcomeMessage, 'ai');
-    },
-
-    createMessageElement(text, type) {
+    addMessage(message, type) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type}-message`;
-
-        if (type === 'ai') {
-            // Split the response into sections
-            const sections = text.split(/\*\*([^*]+)\*\*/).filter(Boolean);
-            
-            for (let i = 0; i < sections.length; i += 2) {
-                const sectionTitle = sections[i];
-                const sectionContent = sections[i + 1] || '';
-
-                const section = document.createElement('div');
-                section.className = 'response-section';
-
-                // Add section header
-                const header = document.createElement('h4');
-                header.textContent = sectionTitle.trim();
-                section.appendChild(header);
-
-                // Create bullet point list
-                const ul = document.createElement('ul');
-                ul.className = 'response-list';
-
-                // Process content into bullet points
-                const points = sectionContent
-                    .split('\n')
-                    .map(point => point.trim())
-                    .filter(point => point && !point.toLowerCase().includes('important:'))
-                    .map(point => point.replace(/^[•\-*]\s*/, ''));
-
-                // Add each point as a list item
-                points.forEach(point => {
-                    if (point) {
-                        const li = document.createElement('li');
-                        li.textContent = point;
-                        ul.appendChild(li);
-                    }
-                });
-
-                section.appendChild(ul);
-                messageDiv.appendChild(section);
-            }
-
-            // Add disclaimer if present
-            if (text.includes('IMPORTANT:') || text.includes('ZARURI SUCHNA:')) {
-                const disclaimer = document.createElement('div');
-                disclaimer.className = 'disclaimer';
-                disclaimer.textContent = text.split(/IMPORTANT:|ZARURI SUCHNA:/)[1].trim();
-                messageDiv.appendChild(disclaimer);
-            }
-        } else {
-            // User message
-            messageDiv.textContent = text;
-        }
-
-        return messageDiv;
-    },
-
-    showTypingIndicator() {
-        if (!this.typingIndicator) {
-            this.typingIndicator = document.createElement('div');
-            this.typingIndicator.className = 'typing-indicator';
-
-            const preFormat = `
-                <div class="response-section">
-                    <h4>Initial Assessment</h4>
-                    <ul class="response-list">
-                        <li>Analyzing your symptoms...</li>
-                    </ul>
-                </div>
-                <div class="response-section">
-                    <h4>Clinical Information</h4>
-                    <ul class="response-list">
-                        <li>Gathering medical details...</li>
-                    </ul>
-                </div>
-                <div class="response-section">
-                    <h4>Medical Recommendations</h4>
-                    <ul class="response-list">
-                        <li>Preparing treatment plan...</li>
-                    </ul>
-                </div>
-                <div class="response-section">
-                    <h4>Precautions & Warning Signs</h4>
-                    <ul class="response-list">
-                        <li>Identifying important warnings...</li>
-                    </ul>
+        
+        if (type === 'user') {
+            messageDiv.innerHTML = `
+                <div class="message-content">
+                    <i class="fas fa-user text-primary me-2"></i>${message}
                 </div>`;
-
-            this.typingIndicator.innerHTML = preFormat;
-
-            // Add typing dots
-            const dots = document.createElement('div');
-            dots.className = 'typing-dots';
-            for (let i = 0; i < 3; i++) {
-                const dot = document.createElement('span');
-                dots.appendChild(dot);
-            }
-            this.typingIndicator.appendChild(dots);
+        } else {
+            // Format AI response with sections
+            const sections = this.formatAIResponse(message);
+            messageDiv.innerHTML = `
+                <div class="message-content">
+                    <i class="fas fa-robot text-primary me-2"></i>${sections}
+                </div>`;
         }
-        this.messageContainer.appendChild(this.typingIndicator);
+        
+        this.messageContainer.appendChild(messageDiv);
         this.scrollToBottom();
     },
 
+    showTypingIndicator() {
+        const typingIndicator = document.createElement('div');
+        typingIndicator.className = 'typing-indicator';
+        typingIndicator.textContent = '...';
+        this.messageContainer.appendChild(typingIndicator);
+    },
+
     removeTypingIndicator() {
-        if (this.typingIndicator && this.typingIndicator.parentNode) {
-            this.typingIndicator.parentNode.removeChild(this.typingIndicator);
+        const typingIndicator = this.messageContainer.querySelector('.typing-indicator');
+        if (typingIndicator) {
+            typingIndicator.remove();
         }
     },
 
@@ -589,98 +616,53 @@ const chatAssistant = {
         this.messageContainer.scrollTop = this.messageContainer.scrollHeight;
     },
 
+    addWelcomeMessage() {
+        this.addMessage('Hello! How can I assist you today?', 'ai');
+    },
+
     async sendMessage(e) {
         e.preventDefault();
-        const message = this.userInput.value.trim();
-        if (!message) return;
-
-        // Clear input
-        this.userInput.value = '';
-
+        const userMessage = this.userInput.value.trim();
+        
+        if (!userMessage) return;
+        
         // Add user message
-        this.addMessage(message, 'user');
-
+        this.addMessage(userMessage, 'user');
+        this.userInput.value = '';
+        
         // Show typing indicator
         this.showTypingIndicator();
-
+        
         try {
-            const response = await fetch('/api/chat', {
+            const response = await fetch('/api/chat', {  
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    message: message,
-                    language: this.currentLanguage
+                body: JSON.stringify({ 
+                    message: userMessage,
+                    language: 'english'  
                 })
             });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
+            
             const data = await response.json();
             
             // Remove typing indicator
             this.removeTypingIndicator();
-
-            if (data.success) {
-                // Format the response before adding
-                let formattedResponse = this.formatAIResponse(data.response);
+            
+            if (data.response) {
+                // Format the response and add it
+                const formattedResponse = this.formatAIResponse(data.response);
                 this.addMessage(formattedResponse, 'ai');
             } else {
-                throw new Error(data.error || 'Unknown error occurred');
+                this.addMessage('I apologize, but I am having trouble understanding. Could you please rephrase your question?', 'ai');
             }
         } catch (error) {
-            console.error('Error:', error);
+            console.error('Chat error:', error);
             this.removeTypingIndicator();
-            const errorMsg = this.currentLanguage === 'english'
-                ? `Sorry, there was an error: ${error.message}`
-                : `Sorry, kuch problem ho gaya hai: ${error.message}`;
-            this.addMessage(errorMsg, 'ai');
-        }
-    },
-
-    formatAIResponse(response) {
-        // Split into sections
-        const sections = response.split(/\*\*([^*]+)\*\*/).filter(Boolean);
-        let formatted = [];
-        
-        for (let i = 0; i < sections.length; i += 2) {
-            if (i + 1 < sections.length) {
-                const title = sections[i].trim();
-                const content = sections[i + 1].trim();
-                
-                // Add section header
-                formatted.push(`**${title}**`);
-                
-                // Process content into bullet points
-                const points = content.split('\n')
-                    .map(line => line.trim())
-                    .filter(line => line)
-                    .map(line => {
-                        // Clean up any existing bullets
-                        line = line.replace(/^[•\-*]\s*/, '');
-                        // Add bullet point if not already present
-                        return line.startsWith('•') ? line : `• ${line}`;
-                    });
-                
-                formatted.push(points.join('\n'));
-            }
+            this.addMessage('I apologize, but I encountered an error. Please try again.', 'ai');
         }
         
-        // Add disclaimer
-        const disclaimer = this.currentLanguage === 'english'
-            ? "\n\nIMPORTANT: This information is for educational purposes only and should not replace professional medical advice. Please consult a healthcare provider for diagnosis and treatment."
-            : "\n\nIMPORTANT NOTE: Ye information sirf educational purpose ke liye hai aur ye doctor ki advice ki jagah nahi le sakti. Diagnosis aur treatment ke liye please kisi doctor se consult karein.";
-        
-        return formatted.join('\n\n') + disclaimer;
-    },
-
-    addMessage(text, type) {
-        console.log(`Adding ${type} message: ${text.substring(0, 50)} + '...'`);
-        const message = this.createMessageElement(text, type);
-        this.messageContainer.appendChild(message);
         this.scrollToBottom();
     }
 };

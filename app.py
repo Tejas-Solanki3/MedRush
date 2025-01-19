@@ -23,6 +23,11 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.secret_key = 'super secret key'
 
+# Initialize Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
 # Configure Google AI
 genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
 
@@ -107,44 +112,38 @@ except Exception as e:
 if db is None:
     raise Exception("Failed to establish MongoDB connection")
 
-# Login manager setup
-login_manager = LoginManager(app)
-login_manager.login_view = 'login'
-
 # User class for Flask-Login
-class User:
+class User(UserMixin):
     def __init__(self, user_data):
         self.user_data = user_data
         self.id = str(user_data['_id'])
         self.username = user_data['username']
         self.email = user_data['email']
-        self.is_authenticated = True
-        self.is_active = True
-        self.is_anonymous = False
+        self._authenticated = True
+
+    def is_authenticated(self):
+        return self._authenticated
 
     def get_id(self):
         return str(self.id)
 
     @staticmethod
     def get(user_id):
-        user_data = db.users.find_one({'_id': ObjectId(user_id)})
-        return User(user_data) if user_data else None
-
-    def check_password(self, password):
-        return check_password_hash(self.user_data.get('password_hash', ''), password)
+        try:
+            user_data = db.users.find_one({'_id': ObjectId(user_id)})
+            return User(user_data) if user_data else None
+        except Exception as e:
+            print(f"Error loading user: {e}")
+            return None
 
 @login_manager.user_loader
 def load_user(user_id):
-    try:
-        user_data = db.users.find_one({'_id': ObjectId(user_id)})
-        return User(user_data) if user_data else None
-    except Exception as e:
-        print(f"Error loading user: {e}")
-        return None
+    return User.get(user_id)
 
 # Admin routes
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
+    return render_template('admin_login.html')
     try:
         if request.method == 'POST':
             username = request.form.get('username')
@@ -811,38 +810,47 @@ def format_time_ago(timestamp):
 # Routes
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', current_user=current_user)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
     if request.method == 'POST':
         try:
             data = request.get_json()
-            print(f"Login attempt for username: {data.get('username')}")  # Debug print
+            print(f"Login attempt for: {data.get('username')}")  # Debug print
             
-            username = data.get('username')
+            identifier = data.get('username')  # This can be email or username
             password = data.get('password')
             
-            if not username or not password:
-                print("Missing username or password")
+            if not identifier or not password:
+                print("Missing login credentials")
                 return jsonify({
                     'success': False,
-                    'message': 'Username and password are required'
+                    'message': 'Email/Username and password are required'
                 }), 400
             
-            # Find user
-            user_data = db.users.find_one({'username': username})
+            # Find user by email or username
+            user_data = db.users.find_one({
+                '$or': [
+                    {'email': identifier.lower()},  # Case-insensitive email
+                    {'username': identifier}  # Case-sensitive username
+                ]
+            })
             print(f"Found user: {user_data is not None}")  # Debug print
             
-            if user_data and User(user_data).check_password(password):
+            if user_data and check_password_hash(user_data['password'], password):  # Changed from password_hash
                 print("Password verified successfully")
                 user = User(user_data)
-                login_user(user)
+                login_user(user, remember=True)
+                session.permanent = True
                 
                 # Log activity
                 activity = {
                     'type': 'user',
-                    'description': f'User login: {username}',
+                    'description': f'User login: {user.username}',
                     'timestamp': datetime.now()
                 }
                 db.activities.insert_one(activity)
@@ -851,13 +859,13 @@ def login():
                 return jsonify({
                     'success': True,
                     'message': 'Login successful!',
-                    'redirect': '/dashboard'
+                    'redirect': url_for('index')
                 })
             else:
-                print("Invalid username or password")
+                print("Invalid credentials")
                 return jsonify({
                     'success': False,
-                    'message': 'Invalid username or password'
+                    'message': 'Invalid email/username or password'
                 }), 401
                 
         except Exception as e:
@@ -867,7 +875,8 @@ def login():
                 'message': 'An error occurred during login'
             }), 500
     
-    return render_template('login.html')
+    # For GET requests, redirect to home page with login modal
+    return redirect(url_for('index'))
 
 @app.route('/logout', methods=['POST'])
 @login_required

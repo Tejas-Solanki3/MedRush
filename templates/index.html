@@ -11,13 +11,14 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
     <!-- Navigation Bar -->
-    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top shadow-sm">
         <div class="container">
-            <a class="navbar-brand" href="/">
-                <i class="fas fa-heartbeat text-primary"></i>
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-heartbeat me-2"></i>
                 MedRush
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -26,42 +27,44 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link active" href="/"><i class="fas fa-home"></i> Home</a>
-                    </li>
-                </ul>
-                {% if current_user.is_authenticated %}
-                <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/profile">
-                            <i class="fas fa-user-circle"></i> {{ current_user.user_data.username }}
+                        <a class="nav-link active" href="#home">
+                            <i class="fas fa-home me-1"></i> Home
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#" onclick="logout()">
-                            <i class="fas fa-sign-out-alt"></i> Logout
-                        </a>
-                    </li>
-                </ul>
-                {% else %}
-                <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#loginModal">
-                            <i class="fas fa-sign-in-alt"></i> Login
+                        <a class="nav-link" href="#ai-section">
+                            <i class="fas fa-robot me-1"></i> AI Assistant
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#signupModal">
-                            <i class="fas fa-user-plus"></i> Sign Up
+                        <a class="nav-link" href="#prescription-section">
+                            <i class="fas fa-pills me-1"></i> Prescription Check
                         </a>
                     </li>
                 </ul>
-                {% endif %}
+                <div class="d-flex">
+                    {% if current_user.is_authenticated %}
+                        <a href="{{ url_for('profile') }}" class="btn btn-outline-light me-2">
+                            <i class="fas fa-user me-1"></i> Profile
+                        </a>
+                        <a href="{{ url_for('logout') }}" class="btn btn-outline-light">
+                            <i class="fas fa-sign-out-alt me-1"></i> Logout
+                        </a>
+                    {% else %}
+                        <button class="btn btn-outline-light me-2" data-bs-toggle="modal" data-bs-target="#loginModal">
+                            <i class="fas fa-sign-in-alt me-1"></i> Login
+                        </button>
+                        <a href="{{ url_for('signup') }}" class="btn btn-light">
+                            <i class="fas fa-user-plus me-1"></i> Sign Up
+                        </a>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </nav>
 
-    <!-- Hero Section with Reduced Space -->
-    <div class="hero-section">
+    <!-- Hero Section -->
+    <section id="home" class="hero-section">
         <div class="container">
             <div class="row align-items-center">
                 <div class="col-lg-6">
@@ -77,9 +80,9 @@
                                 <i class="fas fa-robot"></i> Chat with AI
                             </a>
                             {% else %}
-                            <button class="btn btn-primary hero-btn" data-bs-toggle="modal" data-bs-target="#signupModal">
+                            <a href="{{ url_for('signup') }}" class="btn btn-primary hero-btn">
                                 <i class="fas fa-user-plus"></i> Join Now
-                            </button>
+                            </a>
                             <button class="btn btn-outline-primary hero-btn" data-bs-toggle="modal" data-bs-target="#loginModal">
                                 <i class="fas fa-sign-in-alt"></i> Login
                             </button>
@@ -89,7 +92,7 @@
                 </div>
             </div>
         </div>
-    </div>
+    </section>
 
     <!-- Stats Section -->
     <div class="stats-section py-5">
@@ -178,7 +181,7 @@
                             <div class="icon-circle emergency-icon mb-4">
                                 <i class="fas fa-ambulance"></i>
                             </div>
-                            <h3>Dark Ambulance</h3>
+                            <h3>Ambulance</h3>
                             <p class="text-muted">Emergency medical transport in under 10 minutes, available 24/7.</p>
                             <ul class="feature-list">
                                 <li><i class="fas fa-check-circle"></i> Real-time GPS tracking</li>
@@ -186,7 +189,7 @@
                                 <li><i class="fas fa-check-circle"></i> Trained responders</li>
                                 <li><i class="fas fa-check-circle"></i> Hospital coordination</li>
                             </ul>
-                            <button class="btn btn-danger mt-3 rounded-pill emergency-btn" onclick="location.href='/emergency'">
+                            <button class="btn btn-danger mt-3 rounded-pill emergency-btn" onclick="initializeEmergencyMap(); $('#emergencyMapModal').modal('show');">
                                 <i class="fas fa-phone-alt me-2"></i>Emergency Call
                             </button>
                         </div>
@@ -220,32 +223,43 @@
         </div>
     </section>
 
-    <!-- AI Chat Section -->
-    <div id="chat-section" class="chat-section">
-        <div class="container">
-            <div class="row justify-content-center">
-                <div class="col-md-8">
-                    <div class="chat-card">
-                        <div class="chat-header">
+    <!-- Chat Section with Prescription Verification -->
+    <div id="ai-section" class="container my-4">
+        <div class="row justify-content-center">
+            <!-- AI Chat Section (Made Smaller) -->
+            <div class="col-md-5">
+                <div class="chat-section mb-4">
+                    <div class="card shadow-lg">
+                        <div class="card-header bg-gradient bg-primary text-white py-3">
                             <div class="d-flex justify-content-between align-items-center">
-                                <h5 class="mb-0">AI Health Assistant</h5>
-                                <button id="langToggle" class="btn btn-outline-primary btn-sm">
+                                <h5 class="mb-0">
+                                    <i class="fas fa-robot me-2"></i> AI Health Assistant
+                                </h5>
+                                <button id="langToggle" class="btn btn-outline-light btn-sm">
+                                    <i class="fas fa-language me-1"></i>
                                     <span id="langText">Switch to Hinglish</span>
                                 </button>
                             </div>
                         </div>
-                        <div class="chat-body" id="chat-messages">
-                            <!-- Messages will be added here -->
+                        <div class="card-body chat-messages p-0" id="chat-messages" style="height: 400px; overflow-y: auto;">
+                            <div class="p-3">
+                                <div class="message ai-message">
+                                    <div class="message-content">
+                                        <i class="fas fa-robot text-primary me-2"></i>
+                                        Hello! I'm your AI Health Assistant. How can I help you today?
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="chat-footer">
-                            <form id="chat-form" onsubmit="chatAssistant.sendMessage(event)">
+                        <div class="card-footer bg-light p-2">
+                            <form id="chat-form" class="mb-0" onsubmit="chatAssistant.sendMessage(event)">
                                 <div class="input-group">
                                     <input type="text" 
                                            id="user-input" 
-                                           class="form-control chat-input" 
+                                           class="form-control border-primary" 
                                            placeholder="Ask me about your health concerns..."
                                            autocomplete="off">
-                                    <button type="submit" class="btn btn-primary chat-send-btn">
+                                    <button type="submit" class="btn btn-primary px-4">
                                         <i class="fas fa-paper-plane"></i>
                                     </button>
                                 </div>
@@ -254,8 +268,264 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Prescription Verification Section -->
+            <div class="col-md-5">
+                <div class="prescription-section mb-4">
+                    <div class="card shadow-lg">
+                        <div class="card-header bg-gradient bg-primary text-white py-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">
+                                    <i class="fas fa-pills me-2"></i> Prescription Verification
+                                </h5>
+                                <button id="clearPrescription" class="btn btn-outline-light btn-sm">
+                                    <i class="fas fa-trash me-1"></i> Clear
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="prescription-messages mb-3" id="prescription-messages">
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle me-2"></i> Upload your prescription or list your medications for a safety check.
+                                </div>
+                            </div>
+                            <div class="prescription-form">
+                                <div class="mb-3">
+                                    <label for="medications" class="form-label">
+                                        <i class="fas fa-list-ul me-2"></i>List Your Medications
+                                    </label>
+                                    <textarea class="form-control border-primary" id="medications" rows="3" 
+                                        placeholder="Enter each medication on a new line with dosage (e.g., Aspirin 81mg daily)"></textarea>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">
+                                        <i class="fas fa-file-medical me-2"></i>Or Upload Prescription Image
+                                    </label>
+                                    <input type="file" class="form-control border-primary" id="prescription-image" accept="image/*">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="additional-notes" class="form-label">
+                                        <i class="fas fa-notes-medical me-2"></i>Additional Notes
+                                    </label>
+                                    <textarea class="form-control border-primary" id="additional-notes" rows="2"
+                                        placeholder="Any allergies or current conditions we should know about?"></textarea>
+                                </div>
+                                <button class="btn btn-primary w-100" onclick="verifyPrescription()">
+                                    <i class="fas fa-check-circle me-2"></i> Verify Medications
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
+
+    
+    <style>
+        .chat-messages {
+            background: #f8f9fa;
+        }
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 10px;
+        }
+        .user-message {
+            background: #e3f2fd;
+            margin-left: 20%;
+            margin-right: 10px;
+        }
+        .ai-message {
+            background: white;
+            margin-right: 20%;
+            margin-left: 10px;
+            border-left: 4px solid #0d6efd;
+        }
+        .message-content {
+            word-wrap: break-word;
+        }
+        .chat-input input {
+            border-radius: 20px;
+            padding-left: 20px;
+        }
+        .card {
+            border: none;
+            border-radius: 15px;
+        }
+        .card-header {
+            border-top-left-radius: 15px !important;
+            border-top-right-radius: 15px !important;
+        }
+        .form-control:focus {
+            box-shadow: none;
+            border-color: #0d6efd;
+        }
+        .btn-primary {
+            border-radius: 20px;
+        }
+    </style>
+
+    <script>
+        // ChatAssistant class for handling chat functionality
+        class ChatAssistant {
+            constructor() {
+                this.messages = document.getElementById('chat-messages');
+                this.userInput = document.getElementById('user-input');
+                this.language = 'english';
+                this.initializeChat();
+            }
+
+            initializeChat() {
+                // Clear existing messages
+                this.messages.innerHTML = '<div class="p-3"><div class="message ai-message"><div class="message-content"><i class="fas fa-robot text-primary me-2"></i>Hello! I\'m your AI Health Assistant. How can I help you today?</div></div></div>';
+                
+                // Add clear chat button functionality
+                document.getElementById('clearChat').addEventListener('click', () => {
+                    this.clearChat();
+                });
+            }
+
+            clearChat() {
+                // Reset to initial state
+                this.initializeChat();
+                // Clear any stored chat history
+                localStorage.removeItem('chatHistory');
+            }
+
+            async sendMessage(event) {
+                event.preventDefault();
+                const message = this.userInput.value.trim();
+                if (!message) return;
+
+                // Add user message
+                this.addMessage(message, 'user');
+                this.userInput.value = '';
+
+                // Show typing indicator
+                const typingId = this.addTypingIndicator();
+
+                try {
+                    const response = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            message: message,
+                            language: this.language
+                        })
+                    });
+
+                    const data = await response.json();
+                    
+                    // Remove typing indicator
+                    this.removeTypingIndicator(typingId);
+                    
+                    // Add AI response
+                    this.addMessage(data.response, 'ai');
+                    
+                    // Save chat history
+                    this.saveChatHistory();
+                    
+                    // Scroll to bottom
+                    this.messages.scrollTop = this.messages.scrollHeight;
+
+                } catch (error) {
+                    console.error('Error:', error);
+                    this.removeTypingIndicator(typingId);
+                    this.addMessage('Sorry, I encountered an error. Please try again.', 'ai');
+                }
+            }
+
+            addMessage(text, sender) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${sender}-message`;
+                messageDiv.innerHTML = `
+                    <div class="message-content">
+                        ${sender === 'ai' ? '<i class="fas fa-robot text-primary me-2"></i>' : ''}
+                        ${text}
+                    </div>
+                `;
+                this.messages.appendChild(messageDiv);
+                this.messages.scrollTop = this.messages.scrollHeight;
+            }
+
+            addTypingIndicator() {
+                const id = 'typing-' + Date.now();
+                const typingDiv = document.createElement('div');
+                typingDiv.id = id;
+                typingDiv.className = 'message ai-message';
+                typingDiv.innerHTML = `
+                    <div class="message-content">
+                        <i class="fas fa-robot text-primary me-2"></i>
+                        <span class="typing-dots">Thinking<span>.</span><span>.</span><span>.</span></span>
+                    </div>
+                `;
+                this.messages.appendChild(typingDiv);
+                this.messages.scrollTop = this.messages.scrollHeight;
+                return id;
+            }
+
+            removeTypingIndicator(id) {
+                const typingDiv = document.getElementById(id);
+                if (typingDiv) {
+                    typingDiv.remove();
+                }
+            }
+
+            toggleLanguage() {
+                this.language = this.language === 'english' ? 'hinglish' : 'english';
+                const langText = document.getElementById('langText');
+                langText.textContent = `Switch to ${this.language === 'english' ? 'Hinglish' : 'English'}`;
+            }
+
+            saveChatHistory() {
+                const chatHistory = {
+                    messages: this.messages.innerHTML,
+                    language: this.language
+                };
+                localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+            }
+
+            loadChatHistory() {
+                const savedHistory = localStorage.getItem('chatHistory');
+                if (savedHistory) {
+                    const history = JSON.parse(savedHistory);
+                    this.messages.innerHTML = history.messages;
+                    this.language = history.language;
+                    const langText = document.getElementById('langText');
+                    langText.textContent = `Switch to ${this.language === 'english' ? 'Hinglish' : 'English'}`;
+                }
+            }
+        }
+
+        // Initialize chat assistant
+        const chatAssistant = new ChatAssistant();
+
+        // Language toggle button
+        document.getElementById('langToggle').addEventListener('click', () => {
+            chatAssistant.toggleLanguage();
+        });
+
+        // Add prescription clear functionality
+        document.getElementById('clearPrescription').addEventListener('click', function() {
+            // Clear form inputs
+            document.getElementById('medications').value = '';
+            document.getElementById('prescription-image').value = '';
+            document.getElementById('additional-notes').value = '';
+            
+            // Reset messages
+            const messagesDiv = document.getElementById('prescription-messages');
+            messagesDiv.innerHTML = `
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i> Upload your prescription or list your medications for a safety check.
+                </div>
+            `;
+        });
+
+        // Rest of your existing script...
+    </script>
 
     <!-- Login Modal -->
     <div class="modal fade" id="loginModal" tabindex="-1" aria-labelledby="loginModalLabel" aria-hidden="true">
@@ -278,7 +548,7 @@
                         <button type="submit" class="btn btn-primary w-100">Login</button>
                     </form>
                     <div class="text-center mt-3">
-                        <p>Don't have an account? <a href="#" onclick="openSignupModal()">Sign up here</a></p>
+                        <p>Don't have an account? <a href="{{ url_for('signup') }}">Sign up here</a></p>
                     </div>
                 </div>
             </div>
@@ -318,8 +588,308 @@
         </div>
     </div>
 
+    <!-- Emergency Map Modal -->
+    <div class="modal fade" id="emergencyMapModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">
+                        <i class="fas fa-ambulance me-2"></i>Emergency Response
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <div class="emergency-status p-3 bg-light border-bottom">
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border text-danger me-3" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <div>
+                                <h6 class="mb-1">Locating Nearest Ambulance</h6>
+                                <p class="mb-0 text-muted" id="locationStatus">Detecting your location...</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="emergencyMap" style="height: 400px; width: 100%;"></div>
+                    <div class="emergency-info p-3">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Your Location</h6>
+                                <p id="userAddress" class="mb-3">Detecting...</p>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Estimated Arrival Time</h6>
+                                <p id="estimatedTime" class="mb-3">Calculating...</p>
+                            </div>
+                        </div>
+                        <div class="d-grid">
+                            <button class="btn btn-danger" type="button" id="confirmEmergency">
+                                <i class="fas fa-phone-alt me-2"></i>Confirm Emergency Call
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        let map;
+        let userMarker;
+        let hospitalMarker;
+        let routingControl;
+
+        // Update the emergency button click handler
+        document.querySelector('.emergency-btn').addEventListener('click', function(e) {
+            e.preventDefault();
+            $('#emergencyMapModal').modal('show');
+            setTimeout(() => {
+                initializeEmergencyMap();
+            }, 500);
+        });
+
+        function initializeEmergencyMap() {
+            // Initialize the map if not already initialized
+            if (!map) {
+                map = L.map('emergencyMap');
+                
+                // Add OpenStreetMap tiles
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: ' OpenStreetMap contributors'
+                }).addTo(map);
+            }
+
+            // Get user's location
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        const userLocation = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude
+                        };
+
+                        // Center map on user's location
+                        map.setView([userLocation.lat, userLocation.lng], 15);
+
+                        // Add or update user marker
+                        if (userMarker) {
+                            userMarker.setLatLng([userLocation.lat, userLocation.lng]);
+                        } else {
+                            userMarker = L.marker([userLocation.lat, userLocation.lng], {
+                                icon: L.divIcon({
+                                    className: 'custom-div-icon',
+                                    html: '<div class="marker-pin user-location"></div>',
+                                    iconSize: [30, 42],
+                                    iconAnchor: [15, 42]
+                                })
+                            }).addTo(map);
+                        }
+
+                        // Get address using Nominatim
+                        getAddressFromCoordinates(userLocation);
+                        
+                        // Simulate finding nearest hospital (for demo)
+                        simulateNearestHospital(userLocation);
+                    },
+                    function(error) {
+                        document.getElementById('locationStatus').innerHTML = 
+                            'Error: Unable to retrieve your location';
+                    }
+                );
+            }
+        }
+
+        function getAddressFromCoordinates(location) {
+            fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.lat}&lon=${location.lng}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('userAddress').innerHTML = data.display_name;
+                })
+                .catch(error => {
+                    document.getElementById('userAddress').innerHTML = 'Address lookup failed';
+                });
+        }
+
+        function simulateNearestHospital(userLocation) {
+            // Simulate a nearby hospital location (offset from user location)
+            const hospitalLocation = {
+                lat: userLocation.lat + 0.01,
+                lng: userLocation.lng + 0.01
+            };
+
+            // Add or update hospital marker
+            if (hospitalMarker) {
+                hospitalMarker.setLatLng([hospitalLocation.lat, hospitalLocation.lng]);
+            } else {
+                hospitalMarker = L.marker([hospitalLocation.lat, hospitalLocation.lng], {
+                    icon: L.divIcon({
+                        className: 'custom-div-icon',
+                        html: '<div class="marker-pin hospital-location"></div>',
+                        iconSize: [30, 42],
+                        iconAnchor: [15, 42]
+                    })
+                }).addTo(map);
+            }
+
+            // Calculate and display route
+            calculateRoute(userLocation, hospitalLocation);
+        }
+
+        function calculateRoute(start, end) {
+            // Remove existing route if any
+            if (routingControl) {
+                map.removeControl(routingControl);
+            }
+
+            // Calculate straight-line distance
+            const distance = calculateDistance(start.lat, start.lng, end.lat, end.lng);
+            const estimatedMinutes = Math.round((distance / 50) * 60); // Assuming 50 km/h average speed
+
+            // Update estimated time
+            document.getElementById('estimatedTime').innerHTML = `${estimatedMinutes} minutes`;
+            document.getElementById('locationStatus').innerHTML = 'Nearest ambulance located. Ready to dispatch.';
+
+            // Draw a simple line between points
+            const routeLine = L.polyline([
+                [start.lat, start.lng],
+                [end.lat, end.lng]
+            ], {
+                color: 'red',
+                weight: 3,
+                opacity: 0.7,
+                dashArray: '10, 10'
+            }).addTo(map);
+
+            // Fit bounds to show both markers
+            const bounds = L.latLngBounds([
+                [start.lat, start.lng],
+                [end.lat, end.lng]
+            ]);
+            map.fitBounds(bounds, { padding: [50, 50] });
+        }
+
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radius of the earth in km
+            const dLat = deg2rad(lat2 - lat1);
+            const dLon = deg2rad(lon2 - lon1);
+            const a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c; // Distance in km
+        }
+
+        function deg2rad(deg) {
+            return deg * (Math.PI/180);
+        }
+
+        // Confirm emergency call
+        document.getElementById('confirmEmergency').addEventListener('click', function() {
+            this.disabled = true;
+            this.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Dispatching Ambulance...';
+            
+            // Simulate API call delay
+            setTimeout(() => {
+                alert('Emergency services have been notified and are on their way!');
+                $('#emergencyMapModal').modal('hide');
+            }, 2000);
+        });
+
+        function verifyPrescription() {
+            const medications = document.getElementById('medications').value;
+            const notes = document.getElementById('additional-notes').value;
+            const imageInput = document.getElementById('prescription-image');
+            const messagesDiv = document.getElementById('prescription-messages');
+
+            // Create FormData for file upload
+            const formData = new FormData();
+            formData.append('medications', medications);
+            formData.append('notes', notes);
+            if (imageInput.files.length > 0) {
+                formData.append('image', imageInput.files[0]);
+            }
+
+            // Show loading state
+            messagesDiv.innerHTML += `
+                <div class="alert alert-info">
+                    <i class="fas fa-spinner fa-spin"></i> Analyzing your medications...
+                </div>
+            `;
+
+            // Send to backend
+            fetch('/verify-prescription', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Add verification result
+                messagesDiv.innerHTML += `
+                    <div class="alert alert-${data.safe ? 'success' : 'warning'}">
+                        <h6><i class="fas fa-${data.safe ? 'check' : 'exclamation'}-circle"></i> 
+                            ${data.safe ? 'Safe to Proceed' : 'Potential Issues Detected'}</h6>
+                        <p>${data.message}</p>
+                        ${data.recommendations ? `<p><strong>Recommendations:</strong> ${data.recommendations}</p>` : ''}
+                    </div>
+                `;
+            })
+            .catch(error => {
+                messagesDiv.innerHTML += `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Error analyzing prescription. Please try again.
+                    </div>
+                `;
+            });
+        }
+    </script>
+
+    <script>
+        // Add smooth scrolling for navigation
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    const headerOffset = 70; // Adjust based on navbar height
+                    const elementPosition = target.getBoundingClientRect().top;
+                    const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+
+                    window.scrollTo({
+                        top: offsetPosition,
+                        behavior: 'smooth'
+                    });
+                }
+            });
+        });
+
+        // Highlight active nav item based on scroll position
+        window.addEventListener('scroll', function() {
+            const sections = ['home', 'ai-section', 'prescription-section'];
+            let current = '';
+
+            sections.forEach(section => {
+                const element = document.getElementById(section);
+                if (element) {
+                    const rect = element.getBoundingClientRect();
+                    if (rect.top <= 100) {
+                        current = section;
+                    }
+                }
+            });
+
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === `#${current}`) {
+                    link.classList.add('active');
+                }
+            });
+        });
+    </script>
 </body>
 </html>

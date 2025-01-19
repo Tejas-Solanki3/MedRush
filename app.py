@@ -1,14 +1,19 @@
-from flask import Flask, request, jsonify, send_from_directory, render_template, flash, redirect, url_for
-import google.generativeai as genai
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_from_directory
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 from pymongo import MongoClient
-import os
+from pymongo.errors import DuplicateKeyError
 from bson import ObjectId
 from dotenv import load_dotenv
-import datetime
+import os
+from datetime import datetime, timedelta
 import re
 from urllib.parse import quote_plus
+import random
+import json
+from functools import wraps
+import google.generativeai as genai
 
 # Load environment variables
 load_dotenv()
@@ -16,214 +21,418 @@ load_dotenv()
 app = Flask(__name__, static_folder='static')
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
 app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.secret_key = 'super secret key'
+
+# Configure Google AI
+genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
+
+# Upload folder configuration
+app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'pdf'}
+
+# Create uploads directory if it doesn't exist
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # MongoDB setup
+db = None
 try:
-    MONGODB_URI = os.getenv('MONGODB_URI')
-    if not MONGODB_URI:
-        raise ValueError("No MONGODB_URI in environment variables")
+    # Get MongoDB connection string from environment variables
+    mongodb_username = os.getenv('MONGODB_USERNAME')
+    mongodb_password = os.getenv('MONGODB_PASSWORD')
+    mongodb_cluster = os.getenv('MONGODB_CLUSTER')
     
-    # Parse and reconstruct the URI with escaped username and password
-    if '@' in MONGODB_URI:
-        prefix = MONGODB_URI.split('://', 1)[0]
-        rest = MONGODB_URI.split('://', 1)[1]
-        credentials = rest.split('@')[0]
-        host = rest.split('@')[1]
-        username = credentials.split(':')[0]
-        password = credentials.split(':')[1].split('@')[0]
-        
-        # Escape username and password
-        escaped_username = quote_plus(username)
-        escaped_password = quote_plus(password)
-        
-        # Reconstruct the URI
-        MONGODB_URI = f"{prefix}://{escaped_username}:{escaped_password}@{host}"
+    if not all([mongodb_username, mongodb_password, mongodb_cluster]):
+        raise ValueError("Missing MongoDB credentials in environment variables")
     
-    client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
-    # Ping the server to check connection
+    # Construct the connection string - using the correct format
+    connection_string = f"mongodb+srv://{mongodb_username}:{mongodb_password}@{mongodb_cluster}.mongodb.net/?retryWrites=true&w=majority"
+    print(f"Connecting to MongoDB with cluster: {mongodb_cluster}")
+    
+    # Create MongoDB client
+    client = MongoClient(connection_string)
+    
+    # Select database
+    db = client['medrush_db']
+    print(f"Selected database: {db.name}")
+    
+    # Test connection
     client.admin.command('ping')
     print("Successfully connected to MongoDB!")
     
-    db = client['medrush_db']
-    users_collection = db['users']
-    appointments_collection = db['appointments']
-    insurance_collection = db['insurance']  # Create insurance collection
+    # Initialize collections if they don't exist
+    required_collections = ['users', 'appointments', 'emergency_calls', 'activities', 'admins', 'insurance', 'prescription_verifications', 'chat_history']
+    existing_collections = db.list_collection_names()
     
+    for collection in required_collections:
+        if collection not in existing_collections:
+            db.create_collection(collection)
+            print(f"Created new collection: {collection}")
+    
+    # Create default admin user if not exists
+    if db.admins.count_documents({}) == 0:
+        admin = {
+            'username': 'admin',
+            'password': generate_password_hash('admin123'),
+            'email': 'admin@medrush.com',
+            'created_at': datetime.now(),
+            'role': 'admin'
+        }
+        result = db.admins.insert_one(admin)
+        print(f"Created default admin user with ID: {result.inserted_id}")
+    
+    # Create indexes if they don't exist
+    print("\nCreating/Verifying indexes...")
+    db.users.create_index([('username', 1)], unique=True)
+    db.users.create_index([('email', 1)], unique=True)
+    db.appointments.create_index([('user_id', 1), ('date', 1)])
+    db.insurance.create_index([('user_id', 1), ('created_at', 1)])
+    print("Indexes created/verified successfully")
+    
+    # Print collection statistics
+    print("\nCollection statistics:")
+    for collection in required_collections:
+        count = db[collection].count_documents({})
+        print(f"- {collection}: {count} documents")
+
 except Exception as e:
-    print(f"Error connecting to MongoDB: {str(e)}")
+    print(f"MongoDB Error: {str(e)}")
+    print(f"Error type: {type(e).__name__}")
+    db = None
     raise e
 
-# Create indexes for faster queries
-users_collection.create_index('username', unique=True)
-users_collection.create_index('email', unique=True)
-appointments_collection.create_index([('user_id', 1), ('date', 1)])
-insurance_collection.create_index([('user_id', 1), ('created_at', 1)])  # Create index for insurance collection
+if db is None:
+    raise Exception("Failed to establish MongoDB connection")
 
 # Login manager setup
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
-# Configure Gemini AI
-genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
-
 # User class for Flask-Login
-class User(UserMixin):
+class User:
     def __init__(self, user_data):
         self.user_data = user_data
-
-    @property
-    def is_active(self):
-        return True
-
-    @property
-    def is_authenticated(self):
-        return True
-
-    @property
-    def is_anonymous(self):
-        return False
+        self.id = str(user_data['_id'])
+        self.username = user_data['username']
+        self.email = user_data['email']
+        self.is_authenticated = True
+        self.is_active = True
+        self.is_anonymous = False
 
     def get_id(self):
-        return str(self.user_data['_id'])
+        return str(self.id)
+
+    @staticmethod
+    def get(user_id):
+        user_data = db.users.find_one({'_id': ObjectId(user_id)})
+        return User(user_data) if user_data else None
+
+    def check_password(self, password):
+        return check_password_hash(self.user_data.get('password_hash', ''), password)
 
 @login_manager.user_loader
 def load_user(user_id):
     try:
-        user_data = users_collection.find_one({'_id': ObjectId(user_id)})
+        user_data = db.users.find_one({'_id': ObjectId(user_id)})
         return User(user_data) if user_data else None
     except Exception as e:
         print(f"Error loading user: {e}")
         return None
 
-# Routes
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/login', methods=['POST'])
-def login():
+# Admin routes
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
     try:
-        data = request.get_json()
-        username = data.get('username')
-        password = data.get('password')
-
-        user_data = users_collection.find_one({'username': username})
-        
-        if user_data and check_password_hash(user_data['password_hash'], password):
-            user = User(user_data)
-            login_user(user)
-            return jsonify({
-                'success': True,
-                'message': 'Login successful!',
-                'username': username
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'message': 'Invalid username or password'
-            }), 401
-
-    except Exception as e:
-        print(f"Login error: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': 'An error occurred during login'
-        }), 500
-
-@app.route('/logout', methods=['POST'])
-@login_required
-def logout():
-    try:
-        logout_user()
-        return jsonify({
-            'success': True,
-            'message': 'Logged out successfully'
-        })
-    except Exception as e:
-        print(f"Logout error: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': 'An error occurred during logout'
-        }), 500
-
-@app.route('/signup', methods=['POST'])
-def signup():
-    try:
-        data = request.get_json()
-        print(f"Received signup data: {data}")  # Debug print
-        
-        username = data.get('username')
-        email = data.get('email')
-        password = data.get('password')
-
-        # Validate input
-        if not all([username, email, password]):
-            return jsonify({
-                'success': False,
-                'message': 'Please fill in all fields'
-            }), 400
-
-        # Check password length
-        if len(password) < 8:
-            return jsonify({
-                'success': False,
-                'message': 'Password must be at least 8 characters long'
-            }), 400
-
-        # Check if username already exists
-        if users_collection.find_one({'username': username}):
-            return jsonify({
-                'success': False,
-                'message': 'Username already taken'
-            }), 400
-
-        # Check if email already exists
-        if users_collection.find_one({'email': email}):
-            return jsonify({
-                'success': False,
-                'message': 'Email already registered'
-            }), 400
-
-        # Create new user
-        user_data = {
-            'username': username,
-            'email': email,
-            'password_hash': generate_password_hash(password),
-            'created_at': datetime.datetime.utcnow(),
-            'profile': {
-                'name': '',
-                'age': '',
-                'gender': '',
-                'phone': '',
-                'address': '',
-                'medical_history': []
-            }
-        }
-
-        print(f"Inserting user data: {user_data}")  # Debug print
-        result = users_collection.insert_one(user_data)
-        
-        if result.inserted_id:
-            # Create User instance
-            user = User(user_data)
-            login_user(user)
+        if request.method == 'POST':
+            username = request.form.get('username')
+            password = request.form.get('password')
             
+            print(f"Admin login attempt for username: {username}")  # Debug print
+            
+            # Find admin user
+            admin = db.admins.find_one({'username': username})
+            print(f"Found admin: {admin is not None}")  # Debug print
+            
+            if admin and check_password_hash(admin['password'], password):
+                print("Admin password verified successfully")
+                # Set session variables
+                session['admin_logged_in'] = True
+                session['admin_id'] = str(admin['_id'])
+                session['admin_username'] = admin['username']
+                
+                # Log activity
+                activity = {
+                    'type': 'admin',
+                    'description': f'Admin login: {username}',
+                    'timestamp': datetime.now()
+                }
+                db.activities.insert_one(activity)
+                print("Admin login activity logged")
+                
+                flash('Login successful!', 'success')
+                return redirect(url_for('admin_dashboard'))
+            else:
+                print("Invalid admin credentials")
+                flash('Invalid credentials!', 'danger')
+                return redirect(url_for('admin_login'))
+                
+        return render_template('admin_login.html')
+        
+    except Exception as e:
+        print(f"Admin login error: {str(e)}")
+        flash('An error occurred during login', 'danger')
+        return render_template('admin_login.html')
+
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('admin_logged_in', None)
+    session.pop('admin_id', None)
+    session.pop('admin_username', None)
+    flash('You have been logged out', 'info')
+    return redirect(url_for('admin_login'))
+
+def admin_required(f):
+    @wraps(f)  # Use wraps to avoid function name conflicts
+    def admin_check(*args, **kwargs):
+        if not session.get('admin_logged_in'):
+            flash('Please login first!', 'warning')
+            return redirect(url_for('admin_login'))
+        return f(*args, **kwargs)
+    return admin_check
+
+@app.route('/admin/dashboard')
+@admin_required
+def admin_dashboard():
+    try:
+        # Get counts
+        emergency_count = db.emergency_calls.count_documents({})
+        appointment_count = db.appointments.count_documents({})
+        doctor_count = db.users.count_documents({'role': 'doctor'})
+        patient_count = db.users.count_documents({'role': 'patient'})
+
+        # Get all patients with their details
+        patients = list(db.users.find({'role': 'patient'}).sort('created_at', -1))
+        
+        # Enhance patient data
+        for patient in patients:
+            # Ensure profile exists
+            if 'profile' not in patient:
+                patient['profile'] = {
+                    'first_name': '',
+                    'last_name': '',
+                    'age': '',
+                    'gender': '',
+                    'blood_type': '',
+                    'phone': '',
+                    'address': '',
+                    'medical_history': [],
+                    'allergies': [],
+                    'medications': []
+                }
+            
+            # Get last visit
+            last_appointment = db.appointments.find_one(
+                {'patient_id': patient['_id']},
+                sort=[('date', -1)]
+            )
+            patient['last_visit'] = last_appointment['date'] if last_appointment else None
+            
+            # Set active status
+            patient['active'] = True  # You can set this based on your criteria
+            
+            # Convert ObjectId to string for template
+            patient['_id'] = str(patient['_id'])
+
+        # Get recent emergency calls with detailed information
+        emergency_calls = list(db.emergency_calls.find().sort('time', -1).limit(10))
+        
+        # Enhance emergency call data
+        for call in emergency_calls:
+            # Get patient details
+            patient = db.users.find_one({'_id': call.get('patient_id')})
+            if patient:
+                call['patient_name'] = f"{patient.get('profile', {}).get('first_name', '')} {patient.get('profile', {}).get('last_name', '')}"
+                call['patient_age'] = patient.get('profile', {}).get('age')
+                call['blood_type'] = patient.get('profile', {}).get('blood_type')
+                call['medical_history'] = patient.get('profile', {}).get('medical_history', [])
+                call['allergies'] = patient.get('profile', {}).get('allergies', [])
+                call['contact_number'] = patient.get('profile', {}).get('phone')
+                call['email'] = patient.get('email')
+            else:
+                call['patient_name'] = 'Unknown'
+            
+            # Calculate time elapsed
+            if call.get('time'):
+                elapsed = datetime.now() - call['time']
+                if elapsed.days > 0:
+                    call['time_elapsed'] = f"{elapsed.days} days ago"
+                elif elapsed.seconds > 3600:
+                    call['time_elapsed'] = f"{elapsed.seconds // 3600} hours ago"
+                else:
+                    call['time_elapsed'] = f"{elapsed.seconds // 60} minutes ago"
+            
+            # Set status color
+            status = call.get('status', 'pending').lower()
+            call['status_color'] = {
+                'pending': 'warning',
+                'accepted': 'success',
+                'rejected': 'danger',
+                'completed': 'info'
+            }.get(status, 'secondary')
+
+        # Get recent appointments
+        appointments = list(db.appointments.find().sort('date', -1).limit(10))
+        
+        # Enhance appointment data
+        for appt in appointments:
+            # Get patient details
+            patient = db.users.find_one({'_id': appt.get('patient_id')})
+            if patient:
+                appt['patient_name'] = f"{patient.get('profile', {}).get('first_name', '')} {patient.get('profile', {}).get('last_name', '')}"
+            else:
+                appt['patient_name'] = 'Unknown'
+            
+            # Get doctor details
+            doctor = db.users.find_one({'_id': appt.get('doctor_id')})
+            if doctor:
+                appt['doctor_name'] = f"Dr. {doctor.get('profile', {}).get('first_name', '')} {doctor.get('profile', {}).get('last_name', '')}"
+            else:
+                appt['doctor_name'] = 'Unknown'
+            
+            # Set status color
+            status = appt.get('status', 'pending').lower()
+            appt['status_color'] = {
+                'pending': 'warning',
+                'confirmed': 'success',
+                'cancelled': 'danger',
+                'completed': 'info'
+            }.get(status, 'secondary')
+
+        return render_template('admin_dashboard.html',
+                             emergency_count=emergency_count,
+                             appointment_count=appointment_count,
+                             doctor_count=doctor_count,
+                             patient_count=patient_count,
+                             emergency_calls=emergency_calls,
+                             appointments=appointments,
+                             patients=patients)
+                             
+    except Exception as e:
+        print(f"Error in admin dashboard: {str(e)}")
+        flash('Error loading dashboard data', 'danger')
+        return redirect(url_for('admin_login'))
+
+@app.route('/admin/emergency/update', methods=['POST'])
+@admin_required
+def update_emergency_status():
+    try:
+        data = request.get_json()
+        call_id = data.get('call_id')
+        status = data.get('status')
+        
+        if not call_id or not status:
+            return jsonify({'success': False, 'message': 'Missing required fields'})
+            
+        result = db.emergency_calls.update_one(
+            {'_id': ObjectId(call_id)},
+            {'$set': {
+                'status': status,
+                'updated_at': datetime.now()
+            }}
+        )
+        
+        if result.modified_count > 0:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'message': 'Emergency call not found'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/admin/emergency/dispatch', methods=['POST'])
+@admin_required
+def dispatch_ambulance():
+    try:
+        data = request.get_json()
+        call_id = data.get('call_id')
+        
+        if not call_id:
+            return jsonify({'success': False, 'message': 'Missing call ID'})
+            
+        # Simulate ambulance assignment
+        ambulance = {
+            'unit_number': f"AMB-{random.randint(100,999)}",
+            'driver_name': "John Doe",
+            'contact': "+1234567890"
+        }
+        
+        result = db.emergency_calls.update_one(
+            {'_id': ObjectId(call_id)},
+            {'$set': {
+                'status': 'dispatched',
+                'assigned_ambulance': ambulance,
+                'eta': '15 minutes',
+                'updated_at': datetime.now()
+            }}
+        )
+        
+        if result.modified_count > 0:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'message': 'Emergency call not found'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/emergency-call', methods=['POST'])
+@login_required
+def emergency_call():
+    try:
+        data = request.get_json()
+        print(f"Received emergency call data: {data}")  # Debug print
+
+        # Create emergency call document
+        emergency_data = {
+            'user_id': str(current_user.id),
+            'location': data.get('location', ''),
+            'description': data.get('description', ''),
+            'status': 'pending',
+            'timestamp': datetime.now(),
+            'patient_name': f"{current_user.username}"
+        }
+        
+        print(f"Saving emergency call: {emergency_data}")  # Debug print
+        result = db.emergency_calls.insert_one(emergency_data)
+        print(f"Emergency call saved with ID: {result.inserted_id}")  # Debug print
+
+        if result.inserted_id:
+            # Log activity
+            activity = {
+                'type': 'emergency',
+                'description': f'Emergency call created by {current_user.username}',
+                'timestamp': datetime.now()
+            }
+            db.activities.insert_one(activity)
+            print("Activity logged for emergency call")
+
             return jsonify({
                 'success': True,
-                'message': 'Account created successfully! Please complete your profile.',
-                'redirect': '/profile'
+                'message': 'Emergency call sent successfully!'
             })
         else:
             return jsonify({
                 'success': False,
-                'message': 'Failed to create account'
+                'message': 'Failed to create emergency call'
             }), 500
 
     except Exception as e:
-        print(f"Signup error: {str(e)}")
+        print(f"Emergency call error: {str(e)}")
         return jsonify({
             'success': False,
-            'message': f'An error occurred during signup: {str(e)}'
+            'message': 'An error occurred while processing your emergency call'
         }), 500
 
 @app.route('/book-appointment')
@@ -247,7 +456,7 @@ def submit_appointment():
             'appointment_time': request.form.get('appointment_time'),
             'symptoms': request.form.get('symptoms', ''),
             'status': 'pending',
-            'created_at': datetime.datetime.utcnow()
+            'created_at': datetime.utcnow()
         }
         
         print("Appointment data:", appointment_data)  # Debug print
@@ -269,7 +478,7 @@ def submit_appointment():
             client.admin.command('ping')
             print("MongoDB connection verified")  # Debug print
             
-            result = appointments_collection.insert_one(appointment_data)
+            result = db.appointments.insert_one(appointment_data)
             print("Insert result:", result.inserted_id)  # Debug print
             
             if result.inserted_id:
@@ -291,14 +500,14 @@ def book_appointment_post():
     data = request.json
     try:
         appointment = {
-            'date': datetime.datetime.fromisoformat(data.get('date')),
+            'date': datetime.fromisoformat(data.get('date')),
             'doctor': data.get('doctor'),
             'user_id': ObjectId(current_user.get_id()),
             'status': 'pending',
-            'created_at': datetime.datetime.utcnow()
+            'created_at': datetime.utcnow()
         }
         
-        appointments_collection.insert_one(appointment)
+        db.appointments.insert_one(appointment)
         return jsonify({'success': True})
     except Exception as e:
         print(f"Booking error: {e}")
@@ -311,275 +520,57 @@ def ai_assistant():
 @app.route('/api/chat', methods=['POST'])
 def chat():
     try:
-        print("Chat endpoint called")
-        data = request.get_json()
-        
-        if not data:
-            print("No JSON data received")
-            return jsonify({
-                'error': 'No data provided',
-                'success': False
-            }), 400
-            
-        user_message = data.get('message')
+        data = request.json
+        user_message = data.get('message', '')
         language = data.get('language', 'english')
         
-        if not user_message:
-            print("No message provided")
-            return jsonify({
-                'error': 'No message provided',
-                'success': False
-            }), 400
-            
-        print(f"Processing message: {user_message[:50]}...")
-        print(f"Selected language: {language}")
-
-        try:
-            model = genai.GenerativeModel('gemini-pro')
-        except Exception as e:
-            print(f"Error initializing Gemini model: {str(e)}")
-            return jsonify({
-                'error': 'Failed to initialize AI model',
-                'success': False
-            }), 500
-
-        # Add medical context and safety parameters
-        safety_settings = {
-            "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
-            "HARM_CATEGORY_HATE_SPEECH": "BLOCK_ONLY_HIGH",
-            "HARM_CATEGORY_HARASSMENT": "BLOCK_ONLY_HIGH",
-            "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_ONLY_HIGH"
-        }
+        # Initialize the model
+        model = genai.GenerativeModel('gemini-pro')
         
-        generation_config = genai.types.GenerationConfig(
-            temperature=0.7,
-            top_p=0.8,
-            top_k=40,
-            max_output_tokens=2048,
-        )
-
-        # Update context with medical disclaimer
-        medical_context = """IMPORTANT: This is a legitimate medical consultation assistant. 
-        The responses will contain professional medical terminology and discussions about health conditions.
-        All content is intended to be informative and educational."""
+        # Create context and prompt
+        context = """You are a knowledgeable and empathetic medical AI assistant. 
+        Your role is to provide helpful health-related information and guidance, while being clear that you are not a replacement for professional medical advice. 
+        Always encourage users to consult healthcare professionals for specific medical concerns."""
         
-        if language == 'english':
-            context = f"""{medical_context}
-            You are MedRush's AI Health Assistant providing professional medical information. Your responses should be:
-            1. Professional and clinical
-            2. Evidence-based and accurate
-            3. Using appropriate medical terminology
-            4. Structured in bullet points
-            
-            Focus on providing factual medical information and guidance."""
-        else:
-            context = f"""{medical_context}
-            You are MedRush's AI Health Assistant providing professional medical information in Hinglish. Your responses should be:
-            1. Professional and clinical
-            2. Evidence-based and accurate
-            3. Using appropriate medical terminology with Hinglish explanations
-            4. Structured in bullet points
-            
-            Focus on providing factual medical information and guidance."""
-
-        prompt = f"""{context}
-
-        Medical Query: {user_message}
-
-        Provide a clear medical response with SEPARATE bullet points for each piece of information:
-
-        **Initial Assessment**
-        • Greet the patient and acknowledge their specific symptoms
-        • Provide your understanding of their condition
-
-        **Clinical Information**
-        • Define what this medical condition is
-        • Explain the main causes of this condition
-        • List the most common symptoms
-        • Describe how long this condition typically lasts
-        • Mention factors that can make it worse
-
-        **Medical Recommendations**
-        • List the most effective immediate relief steps
-        • Name specific helpful medications
-        • Explain proper medication dosage
-        • Describe important self-care steps
-        • Suggest helpful lifestyle changes
-
-        **Precautions & Warning Signs**
-        • List specific symptoms that indicate worsening
-        • Name emergency warning signs
-        • State when to seek immediate medical care
-        • Mention specific conditions that require extra caution
-
-        FORMATTING RULES:
-        1. Each bullet point must be ONE complete sentence
-        2. Start each point with • and end with a period
-        3. NO sub-points or nested information
-        4. NO lists within bullet points
-        5. Keep each point clear and separate
-        6. Add blank line after each section header"""
-
-        try:
-            # Generate response with safety settings
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.1,
-                    top_p=0.9,
-                    top_k=30,
-                    max_output_tokens=2048,
-                    candidate_count=1,
-                    stop_sequences=["FORMATTING", "RULES:", "Note:", "Remember:"]
-                ),
-                safety_settings=safety_settings
-            )
-
-            if not response or not response.candidates:
-                raise ValueError("No response generated")
-
-            try:
-                if hasattr(response, 'candidates') and response.candidates:
-                    candidate = response.candidates[0]
-                    if hasattr(candidate, 'content') and candidate.content:
-                        if hasattr(candidate.content, 'parts'):
-                            parts = candidate.content.parts
-                            if parts:
-                                # Get raw response and clean up
-                                raw_response = ' '.join(str(part) for part in parts)
-                                
-                                # Clean up escape sequences and initial formatting
-                                cleaned_response = raw_response.replace('\\n', '\n').replace('\\', '')
-                                
-                                # Process the response section by section
-                                sections = []
-                                current_section = []
-                                
-                                # Split into lines and process each line
-                                lines = cleaned_response.split('\n')
-                                for line in lines:
-                                    line = line.strip()
-                                    if not line:
-                                        continue
-                                    
-                                    # Check if this is a section header
-                                    if '**' in line:
-                                        # If we have content in current section, add it
-                                        if current_section:
-                                            sections.extend(current_section)
-                                            sections.append('')  # Add blank line between sections
-                                            current_section = []
-                                        
-                                        # Add the header
-                                        header = line.strip()
-                                        if not header.startswith('**'):
-                                            header = f"**{header.replace('*', '')}**"
-                                        current_section.append(header)
-                                        current_section.append('')  # Add blank line after header
-                                    else:
-                                        # Process content line
-                                        content = line.strip()
-                                        if content:
-                                            # Remove any existing bullets and clean up
-                                            content = re.sub(r'^[-•*]\s*', '', content)
-                                            
-                                            # Handle lines with colons (usually lists)
-                                            if ':' in content:
-                                                main_point, sub_points = content.split(':', 1)
-                                                # Add the main point if it's meaningful
-                                                if len(main_point.strip()) > 5:  # Avoid short headers
-                                                    current_section.append(f"• {main_point.strip()}")
-                                                
-                                                # Process sub-points
-                                                for sub_point in sub_points.split('.'):
-                                                    sub_point = sub_point.strip()
-                                                    if sub_point and not sub_point.isspace():
-                                                        # Clean up the sub-point
-                                                        sub_point = re.sub(r'^[-•*]\s*', '', sub_point)
-                                                        if not sub_point[-1] in '.!?':
-                                                            sub_point += '.'
-                                                        current_section.append(f"• {sub_point}")
-                                            else:
-                                                # Regular line
-                                                content = content.strip()
-                                                if content and not content.isspace():
-                                                    if not content[-1] in '.!?':
-                                                        content += '.'
-                                                    current_section.append(f"• {content}")
-                                
-                                # Add the last section
-                                if current_section:
-                                    sections.extend(current_section)
-                                
-                                # Join all sections with proper spacing
-                                ai_response = '\n'.join(sections)
-                                
-                                # Clean up any remaining formatting issues
-                                ai_response = re.sub(r'\n{3,}', '\n\n', ai_response)  # Fix multiple blank lines
-                                ai_response = re.sub(r'•\s+•', '•', ai_response)      # Fix multiple bullets
-                                ai_response = re.sub(r'\*{3,}', '**', ai_response)    # Fix multiple asterisks
-                                ai_response = re.sub(r':\s*\n', ':\n', ai_response)   # Fix colon spacing
-                                ai_response = re.sub(r'\s*\.\s*\n', '.\n', ai_response)  # Fix period spacing
-                                
-                                # Add disclaimer with proper spacing
-                                disclaimer = "\n\nIMPORTANT: This information is for educational purposes only and should not replace professional medical advice. Please consult a healthcare provider for diagnosis and treatment."
-                                if language == 'hinglish':
-                                    disclaimer = "\n\nZARURI SUCHNA: Yeh jankari sirf educational purposes ke liye hai aur doctor ki professional salah ka replacement nahi hai. Diagnosis aur treatment ke liye kripya doctor se sampark karein."
-                                
-                                return jsonify({
-                                    'response': ai_response + disclaimer,
-                                    'success': True
-                                })
-                            else:
-                                raise ValueError("No content parts in response")
-                        else:
-                            raise ValueError("No parts attribute in content")
-                    else:
-                        raise ValueError("No content in candidate")
-                else:
-                    raise ValueError("No valid candidates in response")
-                
-            except Exception as e:
-                print(f"Error processing response: {str(e)}")
-                raise ValueError(f"Failed to process response: {str(e)}")
-
-        except Exception as e:
-            print(f"Error generating or processing response: {str(e)}")
-            # Try one more time with a simplified prompt
-            try:
-                simplified_response = model.generate_content(
-                    f"{context}\n\nProvide a brief medical response about: {user_message}\n\n",
-                    generation_config=genai.types.GenerationConfig(temperature=0.2),
-                    safety_settings=safety_settings
-                )
-                
-                if simplified_response and simplified_response.candidates:
-                    return jsonify({
-                        'response': simplified_response.candidates[0].content.parts[0] + disclaimer,
-                        'success': True
-                    })
-                else:
-                    raise ValueError("Failed to generate simplified response")
-                    
-            except Exception as backup_error:
-                return jsonify({
-                    'error': f'Failed to generate response: {str(backup_error)}',
-                    'success': False
-                }), 500
+        if language == 'hinglish':
+            context += "\nRespond in Hinglish (a mix of Hindi and English) to make the information more accessible."
+        
+        # Create the chat
+        chat = model.start_chat(history=[])
+        
+        # Add system context
+        chat.send_message(context)
+        
+        # Send user message and get response
+        response = chat.send_message(user_message)
+        
+        # Extract and format the response
+        ai_response = response.text
+        
+        # Log the chat interaction if user is authenticated
+        if current_user.is_authenticated:
+            db.chat_history.insert_one({
+                'user_id': current_user.get_id(),
+                'user_message': user_message,
+                'ai_response': ai_response,
+                'language': language,
+                'timestamp': datetime.now()
+            })
+        
+        return jsonify({'response': ai_response})
         
     except Exception as e:
-        print(f"Unexpected error in chat endpoint: {str(e)}")
+        print(f"Error in chat: {str(e)}")
         return jsonify({
-            'error': f'Server error: {str(e)}',
-            'success': False
+            'response': 'I apologize, but I encountered an error. Please try again or rephrase your question.'
         }), 500
 
 @app.route('/profile')
 @login_required
 def profile():
-    user_data = users_collection.find_one({'_id': ObjectId(current_user.get_id())})
+    user_data = db.users.find_one({'_id': ObjectId(current_user.get_id())})
     # Get user's appointments
-    appointments = list(appointments_collection.find(
+    appointments = list(db.appointments.find(
         {'user_id': str(current_user.get_id())},
         {'_id': 1, 'patient_name': 1, 'service_type': 1, 'appointment_date': 1, 'appointment_time': 1, 'status': 1}
     ).sort('appointment_date', -1))
@@ -592,7 +583,7 @@ def update_profile():
         data = request.get_json()
         
         # Update user profile
-        result = users_collection.update_one(
+        result = db.users.update_one(
             {'_id': ObjectId(current_user.get_id())},
             {'$set': {
                 'profile.name': data.get('name'),
@@ -643,7 +634,7 @@ def submit_insurance():
             'claim_amount': request.form.get('claim_amount'),
             'description': request.form.get('description'),
             'status': 'pending',
-            'created_at': datetime.datetime.utcnow()
+            'created_at': datetime.utcnow()
         }
         
         print("Insurance data:", insurance_data)  # Debug print
@@ -665,7 +656,7 @@ def submit_insurance():
             client.admin.command('ping')
             print("MongoDB connection verified")  # Debug print
             
-            result = insurance_collection.insert_one(insurance_data)
+            result = db.insurance.insert_one(insurance_data)
             print("Insert result:", result.inserted_id)  # Debug print
             
             if result.inserted_id:
@@ -681,6 +672,108 @@ def submit_insurance():
         flash('An error occurred while submitting claim. Please try again.', 'danger')
         return redirect(url_for('insurance'))
 
+@app.route('/verify-prescription', methods=['POST'])
+def verify_prescription():
+    try:
+        # Get form data
+        medications = request.form.get('medications', '').strip()
+        notes = request.form.get('notes', '').strip()
+        
+        # Handle image upload if present
+        prescription_image = None
+        if 'image' in request.files:
+            file = request.files['image']
+            if file and file.filename:
+                # Save image temporarily
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+                prescription_image = filepath
+
+        # Split medications into list
+        med_list = [med.strip() for med in medications.split('\n') if med.strip()]
+        
+        # Initialize response
+        response = {
+            'safe': True,
+            'message': 'Your medications have been reviewed.',
+            'recommendations': []
+        }
+        
+        # Check for common drug interactions and dosage issues
+        dangerous_combinations = {
+            ('aspirin', 'warfarin'): 'Increased risk of bleeding',
+            ('ibuprofen', 'aspirin'): 'Increased risk of gastrointestinal bleeding',
+            ('cipro', 'calcium'): 'Reduced absorption of antibiotic'
+        }
+        
+        # Convert medications to lowercase for comparison
+        med_list_lower = [med.lower() for med in med_list]
+        
+        # Check for dangerous combinations
+        for (drug1, drug2), risk in dangerous_combinations.items():
+            if drug1 in ' '.join(med_list_lower) and drug2 in ' '.join(med_list_lower):
+                response['safe'] = False
+                response['recommendations'].append(f"Warning: {drug1.title()} and {drug2.title()} - {risk}")
+        
+        # Check dosage patterns
+        for med in med_list:
+            # Extract dosage if present
+            dosage_match = re.search(r'(\d+)\s*(mg|g|ml)', med.lower())
+            if dosage_match:
+                dosage = int(dosage_match.group(1))
+                unit = dosage_match.group(2)
+                
+                # Example dosage checks (add more based on your needs)
+                if 'aspirin' in med.lower() and unit == 'mg' and dosage > 325:
+                    response['safe'] = False
+                    response['recommendations'].append(
+                        f"High dosage detected for Aspirin ({dosage}mg). Standard dosage is 81-325mg."
+                    )
+                elif 'ibuprofen' in med.lower() and unit == 'mg' and dosage > 800:
+                    response['safe'] = False
+                    response['recommendations'].append(
+                        f"High dosage detected for Ibuprofen ({dosage}mg). Maximum single dose is 800mg."
+                    )
+        
+        # Add general recommendations if medications are safe
+        if response['safe']:
+            response['message'] = "Your medications appear to be safe to take as prescribed."
+            response['recommendations'].extend([
+                "Take medications with food unless otherwise directed",
+                "Store in a cool, dry place",
+                "Set reminders to take medications on time"
+            ])
+        else:
+            response['message'] = "Some potential issues were detected with your medications."
+            response['recommendations'].append(
+                "Please consult with your healthcare provider about these concerns."
+            )
+        
+        # Clean up uploaded file if it exists
+        if prescription_image and os.path.exists(prescription_image):
+            os.remove(prescription_image)
+        
+        # Log the verification
+        if current_user.is_authenticated:
+            db.prescription_verifications.insert_one({
+                'user_id': current_user.get_id(),
+                'medications': med_list,
+                'notes': notes,
+                'result': response,
+                'timestamp': datetime.now()
+            })
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        print(f"Error in prescription verification: {str(e)}")
+        return jsonify({
+            'safe': False,
+            'message': 'An error occurred while analyzing your prescription.',
+            'recommendations': ['Please try again or consult with your healthcare provider.']
+        }), 500
+
 @app.context_processor
 def utility_processor():
     def get_user_profile():
@@ -688,6 +781,238 @@ def utility_processor():
             return current_user.user_data.get('profile', {})
         return {}
     return dict(get_user_profile=get_user_profile)
+
+def format_time_ago(timestamp):
+    """Format a timestamp into a human-readable 'time ago' string."""
+    now = datetime.now()
+    if isinstance(timestamp, str):
+        timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+    
+    diff = now - timestamp
+    
+    if diff < timedelta(minutes=1):
+        return 'just now'
+    elif diff < timedelta(hours=1):
+        minutes = int(diff.total_seconds() / 60)
+        return f'{minutes} minute{"s" if minutes != 1 else ""} ago'
+    elif diff < timedelta(days=1):
+        hours = int(diff.total_seconds() / 3600)
+        return f'{hours} hour{"s" if hours != 1 else ""} ago'
+    elif diff < timedelta(days=30):
+        days = diff.days
+        return f'{days} day{"s" if days != 1 else ""} ago'
+    elif diff < timedelta(days=365):
+        months = int(diff.days / 30)
+        return f'{months} month{"s" if months != 1 else ""} ago'
+    else:
+        years = int(diff.days / 365)
+        return f'{years} year{"s" if years != 1 else ""} ago'
+
+# Routes
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            print(f"Login attempt for username: {data.get('username')}")  # Debug print
+            
+            username = data.get('username')
+            password = data.get('password')
+            
+            if not username or not password:
+                print("Missing username or password")
+                return jsonify({
+                    'success': False,
+                    'message': 'Username and password are required'
+                }), 400
+            
+            # Find user
+            user_data = db.users.find_one({'username': username})
+            print(f"Found user: {user_data is not None}")  # Debug print
+            
+            if user_data and User(user_data).check_password(password):
+                print("Password verified successfully")
+                user = User(user_data)
+                login_user(user)
+                
+                # Log activity
+                activity = {
+                    'type': 'user',
+                    'description': f'User login: {username}',
+                    'timestamp': datetime.now()
+                }
+                db.activities.insert_one(activity)
+                print("Login activity logged")
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Login successful!',
+                    'redirect': '/dashboard'
+                })
+            else:
+                print("Invalid username or password")
+                return jsonify({
+                    'success': False,
+                    'message': 'Invalid username or password'
+                }), 401
+                
+        except Exception as e:
+            print(f"Login error: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'An error occurred during login'
+            }), 500
+    
+    return render_template('login.html')
+
+@app.route('/logout', methods=['POST'])
+@login_required
+def logout():
+    try:
+        logout_user()
+        return jsonify({
+            'success': True,
+            'message': 'Logged out successfully'
+        })
+    except Exception as e:
+        print(f"Logout error: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'An error occurred during logout'
+        }), 500
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if request.method == 'POST':
+        try:
+            # Check if the request is JSON or form data
+            if request.is_json:
+                data = request.get_json()
+                username = data.get('username')
+                email = data.get('email')
+                password = data.get('password')
+                confirm_password = data.get('confirm_password')
+                role = data.get('role', 'patient')
+            else:
+                # Handle form data
+                username = request.form.get('username')
+                email = request.form.get('email')
+                password = request.form.get('password')
+                confirm_password = request.form.get('confirm_password')
+                role = request.form.get('role', 'patient')
+            
+            print(f"Received signup request for username: {username}, email: {email}, role: {role}")
+            
+            # Validate required fields
+            if not all([username, email, password, confirm_password]):
+                missing_fields = []
+                if not username: missing_fields.append('username')
+                if not email: missing_fields.append('email')
+                if not password: missing_fields.append('password')
+                if not confirm_password: missing_fields.append('confirm password')
+                print(f"Missing required fields: {', '.join(missing_fields)}")
+                
+                if request.is_json:
+                    return jsonify({
+                        'success': False,
+                        'message': f"Required fields missing: {', '.join(missing_fields)}"
+                    }), 400
+                else:
+                    flash(f"Required fields missing: {', '.join(missing_fields)}", 'danger')
+                    return render_template('signup.html')
+            
+            # Validate password match
+            if password != confirm_password:
+                print("Password mismatch")
+                if request.is_json:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Passwords do not match!'
+                    }), 400
+                else:
+                    flash('Passwords do not match!', 'danger')
+                    return render_template('signup.html')
+            
+            # Create user document
+            user_data = {
+                'username': username,
+                'email': email,
+                'password_hash': generate_password_hash(password),
+                'role': role,
+                'created_at': datetime.now(),
+                'profile': {
+                    'first_name': '',
+                    'last_name': '',
+                    'phone': '',
+                    'address': '',
+                    'medical_history': []
+                }
+            }
+            
+            print(f"Attempting to create user: {username}")
+            result = db.users.insert_one(user_data)
+            print(f"User created with ID: {result.inserted_id}")
+            
+            if result.inserted_id:
+                # Log activity
+                activity = {
+                    'type': 'user',
+                    'description': f'New user signup: {username}',
+                    'timestamp': datetime.now()
+                }
+                db.activities.insert_one(activity)
+                print(f"Activity logged for new user: {username}")
+                
+                # Create user object and log them in
+                user = User(user_data)
+                login_user(user)
+                
+                if request.is_json:
+                    return jsonify({
+                        'success': True,
+                        'message': 'Account created successfully!'
+                    })
+                else:
+                    flash('Account created successfully! Please complete your profile.', 'success')
+                    return redirect(url_for('profile'))
+            
+        except DuplicateKeyError as e:
+            error_msg = str(e)
+            print(f"Duplicate key error: {error_msg}")
+            message = 'An account with these details already exists.'
+            if 'username_1' in error_msg:
+                message = 'This username is already taken. Please choose another.'
+            elif 'email_1' in error_msg:
+                message = 'This email is already registered. Please use another email or try logging in.'
+            
+            if request.is_json:
+                return jsonify({
+                    'success': False,
+                    'message': message
+                }), 400
+            else:
+                flash(message, 'danger')
+                return render_template('signup.html')
+            
+        except Exception as e:
+            print(f"Signup error: {str(e)}")
+            print(f"Error type: {type(e).__name__}")
+            
+            if request.is_json:
+                return jsonify({
+                    'success': False,
+                    'message': 'An error occurred during signup. Please try again.'
+                }), 500
+            else:
+                flash('An error occurred during signup. Please try again.', 'danger')
+                return render_template('signup.html')
+    
+    # GET request - show signup form
+    return render_template('signup.html')
 
 if __name__ == '__main__':
     # Verify MongoDB connection
